@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infinite Divide Tie</title>
+  <style>
+    :root {
+      --top-offset: 10px;
+      --row-height: 64px;
+      --label-font-size: 14px;
+      --line-color: #111111;
+      --bg-color: #ffffff;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--bg-color);
+      overflow-x: auto;
+      overflow-y: auto;
+    }
+
+    body {
+      font-family: "Segoe UI", sans-serif;
+      width: max-content;
+      min-width: 100%;
+    }
+
+    #app {
+       width: max-content;
+       min-width: 100%;
+      min-height: 100vh;
+    }
+
+    .line-canvas {
+      display: block;
+      background: var(--bg-color);
+    }
+
+    .segment,
+    .stem {
+      stroke: var(--line-color);
+      stroke-width: 1;
+      shape-rendering: crispEdges;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .rhythm-stem {
+      stroke: var(--line-color);
+      stroke-width: 1;
+      shape-rendering: crispEdges;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .notehead-filled {
+      fill: var(--line-color);
+      stroke: none;
+    }
+
+    .notehead-open {
+      fill: var(--bg-color);
+      stroke: var(--line-color);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .flag-bar {
+      fill: var(--line-color);
+    }
+
+    .tie-curve {
+      fill: none;
+      stroke: var(--line-color);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .row-connector {
+      stroke: var(--line-color);
+      stroke-width: 1;
+      stroke-dasharray: 3 3;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .note-duration-label {
+      fill: var(--line-color);
+      font-size: 9px;
+      dominant-baseline: hanging;
+      text-anchor: middle;
+      user-select: none;
+    }
+
+    .note-duration-bar {
+      stroke: var(--line-color);
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
+    }
+
+    .divisor-label {
+      fill: var(--line-color);
+      font-size: var(--label-font-size);
+      dominant-baseline: middle;
+      text-anchor: middle;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" :style="{ width: `${contentWidthPx}px` }">
+    <svg
+      class="line-canvas"
+      xmlns="http://www.w3.org/2000/svg"
+      :width="contentWidthPx"
+      :height="svgHeight"
+      :viewBox="`0 0 ${contentWidthPx} ${svgHeight}`"
+      aria-label="fraction-segment-row"
+      role="img"
+    >
+      <g
+        v-for="(row, rowIndex) in rows"
+        :key="`row-${rowIndex}`"
+        :transform="`translate(0 ${rowOffset(rowIndex)})`"
+      >
+        <template v-for="item in row" :key="item.id">
+          <line
+            class="segment"
+            :x1="crisp(item.leftSegmentStart)"
+            :y1="crisp(lineY)"
+            :x2="crisp(item.leftSegmentEnd)"
+            :y2="crisp(lineY)"
+          />
+          <line
+            class="segment"
+            :x1="crisp(item.rightSegmentStart)"
+            :y1="crisp(lineY)"
+            :x2="crisp(item.rightSegmentEnd)"
+            :y2="crisp(lineY)"
+          />
+          <line
+            class="stem"
+            :x1="crisp(item.leftSegmentStart)"
+            :y1="crisp(lineY)"
+            :x2="crisp(item.leftSegmentStart)"
+            :y2="crisp(lineY + stemLengthPx)"
+          />
+          <line
+            class="stem"
+            :x1="crisp(item.rightSegmentEnd)"
+            :y1="crisp(lineY)"
+            :x2="crisp(item.rightSegmentEnd)"
+            :y2="crisp(lineY + stemLengthPx)"
+          />
+          <text
+            class="divisor-label"
+            :x="item.centerX"
+            :y="labelY"
+          >{{ item.splitNumber }}</text>
+          <ellipse
+            v-for="noteEntry in item.noteEntries"
+            :key="`${noteEntry.id}-head`"
+            :class="noteEntry.isOpenHead ? 'notehead-open' : 'notehead-filled'"
+            :cx="noteEntry.headCenterX"
+            :cy="noteEntry.headCenterY + getRowTopInset(row)"
+            :rx="noteHeadRadiusXPx"
+            :ry="noteHeadRadiusYPx"
+          />
+          <line
+            v-for="noteEntry in item.noteEntries.filter((entry) => entry && entry.hasStem)"
+            :key="`${noteEntry.id}-stem`"
+            class="rhythm-stem"
+            :x1="crisp(noteEntry.stemX)"
+            :y1="crisp(noteEntry.stemBaseY + getRowTopInset(row))"
+            :x2="crisp(noteEntry.stemX)"
+            :y2="crisp(noteEntry.stemTopY + getRowTopInset(row))"
+          />
+          <rect
+            v-for="flagSegment in item.flagSegments"
+            :key="flagSegment.id"
+            class="flag-bar"
+            :x="flagSegment.x"
+            :y="flagSegment.y + getRowTopInset(row)"
+            :width="flagSegment.width"
+            :height="flagThicknessPx"
+          />
+          <path
+            v-for="tieSegment in item.tieSegments"
+            :key="tieSegment.id"
+            class="tie-curve"
+            :d="getTiePath(tieSegment, row)"
+          />
+          <line
+            v-for="connectorSegment in item.connectorSegments"
+            :key="connectorSegment.id"
+            class="row-connector"
+            :x1="crisp(connectorSegment.x)"
+            :y1="crisp(getConnectorStartY(connectorSegment, row))"
+            :x2="crisp(connectorSegment.x)"
+            :y2="crisp(getConnectorEndY(row))"
+          />
+          <text
+            v-for="noteEntry in item.noteEntries"
+            :key="`${noteEntry.id}-numerator`"
+            class="note-duration-label"
+            :x="getDurationLabelX(noteEntry)"
+            :y="noteEntry.headCenterY + getRowTopInset(row) - 7"
+          >{{ noteEntry.durationNumerator }}</text>
+          <line
+            v-for="noteEntry in item.noteEntries"
+            :key="`${noteEntry.id}-duration-bar`"
+            class="note-duration-bar"
+            :x1="getDurationLabelX(noteEntry) - getDurationBarHalfWidth(noteEntry)"
+            :y1="getDurationBarY(noteEntry, row)"
+            :x2="getDurationLabelX(noteEntry) + getDurationBarHalfWidth(noteEntry)"
+            :y2="getDurationBarY(noteEntry, row)"
+          />
+          <text
+            v-for="noteEntry in item.noteEntries"
+            :key="`${noteEntry.id}-denominator`"
+            class="note-duration-label"
+            :x="getDurationLabelX(noteEntry)"
+            :y="getDurationBarY(noteEntry, row) + 1"
+          >{{ noteEntry.durationDenominator }}</text>
+        </template>
+      </g>
+    </svg>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.2.47/dist/vue.global.prod.js"></script>
+  <script>
+    const app = Vue.createApp({
+      data() {
+        return {
+          sessionRandomBase: Math.floor(Math.random() * 0xFFFFFFFF),
+          preloadAheadPx: 100,
+          horizontalOverscanPx: 100,
+          horizontalJitterPx: window.innerWidth * 0.9,
+          currentScrollLeftPx: 0,
+          currentScrollTopPx: 0,
+          lastHorizontalLeftPx: -1,
+          lastHorizontalRightPx: -1,
+          lastViewportRightPx: -1,
+          lastVerticalRowCount: -1,
+          minFractionValue: 0.5,
+          minFractionPixels: 50,
+          maxFractionValue: 2,
+          maxDenominator: 16,
+          segmentPaddingPx: 2,
+          centerGapPx: 11,
+          stemLengthPx: 3,
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          topOffsetPx: 30,
+          rowHeightPx: 64,
+          lineY: 18,
+          labelY: 18,
+          noteBeamTopY: 20,
+          noteHeadCenterY: 46,
+          noteStemBaseY: 46,
+          noteHeadRadiusXPx: 4.5,
+          noteHeadRadiusYPx: 3.5,
+          flagWidthPx: 12,
+          flagThicknessPx: 3,
+          flagGapPx: 3,
+          maxDisplayedFlagCount: 4,
+          minBracketFlagGapPx: 2,
+          minItemWidthPx: 30,
+          maxFractionDenominator: 4096,
+          contentWidthPx: window.innerWidth,
+          rows: [],
+        };
+      },
+      computed: {
+        widthUnitPx() {
+          return this.minFractionPixels / this.minFractionValue;
+        },
+        svgHeight() {
+          const totalRowHeight = this.rows.reduce(
+            (sum, row) => sum + this.getRowHeight(row),
+            0,
+          );
+
+          return this.topOffsetPx + Math.max(totalRowHeight, this.rowHeightPx);
+        },
+      },
+      methods: {
+        createSeededRandom(seed) {
+          let state = seed >>> 0;
+
+          return () => {
+            state = (state + 0x6D2B79F5) >>> 0;
+            let mixed = state;
+
+            mixed = Math.imul(mixed ^ (mixed >>> 15), mixed | 1);
+            mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
+            return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+          };
+        },
+        createRowRandom(rowIndex) {
+          const seed = (this.sessionRandomBase ^ Math.imul(rowIndex + 1, 0x9E3779B1)) >>> 0;
+          return this.createSeededRandom(seed);
+        },
+        randomInt(min, max, rng = Math.random) {
+          return Math.floor(rng() * (max - min + 1)) + min;
+        },
+        readCssNumber(variableName, fallback) {
+          const rawValue = getComputedStyle(document.documentElement)
+            .getPropertyValue(variableName)
+            .trim();
+          const parsedValue = Number.parseFloat(rawValue);
+          return Number.isFinite(parsedValue) ? parsedValue : fallback;
+        },
+        syncMetricsFromCss() {
+          this.viewportWidth = window.innerWidth;
+          this.viewportHeight = window.innerHeight;
+          this.topOffsetPx = this.readCssNumber('--top-offset', 10);
+          this.rowHeightPx = this.readCssNumber('--row-height', 64);
+          this.horizontalOverscanPx = this.preloadAheadPx;
+          this.horizontalJitterPx = this.viewportWidth * 0.9;
+          this.contentWidthPx = Math.max(this.contentWidthPx, this.viewportWidth + this.preloadAheadPx);
+        },
+        createRandomFraction(rng = Math.random) {
+          const denominator = this.randomInt(1, this.maxDenominator, rng);
+          const minNumerator = Math.ceil(this.minFractionValue * denominator);
+          const maxNumerator = Math.floor(this.maxFractionValue * denominator);
+          const numerator = this.randomInt(minNumerator, maxNumerator, rng);
+          const value = numerator / denominator;
+
+          return {
+            numerator,
+            denominator,
+            value,
+            fractionText: `${numerator}/${denominator}`,
+          };
+        },
+        greatestCommonDivisor(left, right) {
+          let a = Math.abs(left);
+          let b = Math.abs(right);
+
+          while (b !== 0) {
+            const remainder = a % b;
+            a = b;
+            b = remainder;
+          }
+
+          return a || 1;
+        },
+        approximateFraction(value, maxDenominator) {
+          if (!Number.isFinite(value)) {
+            return { numerator: 0, denominator: 1 };
+          }
+
+          if (value === 0) {
+            return { numerator: 0, denominator: 1 };
+          }
+
+          const sign = value < 0 ? -1 : 1;
+          let target = Math.abs(value);
+          let lowerNumerator = 0;
+          let lowerDenominator = 1;
+          let upperNumerator = 1;
+          let upperDenominator = 0;
+
+          while (true) {
+            const middleNumerator = lowerNumerator + upperNumerator;
+            const middleDenominator = lowerDenominator + upperDenominator;
+
+            if (middleDenominator > maxDenominator) {
+              break;
+            }
+
+            const middleValue = middleNumerator / middleDenominator;
+
+            if (Math.abs(middleValue - target) < Number.EPSILON) {
+              return {
+                numerator: sign * middleNumerator,
+                denominator: middleDenominator,
+              };
+            }
+
+            if (middleValue < target) {
+              lowerNumerator = middleNumerator;
+              lowerDenominator = middleDenominator;
+            } else {
+              upperNumerator = middleNumerator;
+              upperDenominator = middleDenominator;
+            }
+          }
+
+          const lowerValue = lowerNumerator / lowerDenominator;
+          const upperValue = upperDenominator === 0
+            ? Number.POSITIVE_INFINITY
+            : upperNumerator / upperDenominator;
+          const bestApproximation = Math.abs(target - lowerValue) <= Math.abs(upperValue - target)
+            ? { numerator: lowerNumerator, denominator: lowerDenominator }
+            : { numerator: upperNumerator, denominator: upperDenominator };
+
+          return {
+            numerator: sign * bestApproximation.numerator,
+            denominator: bestApproximation.denominator,
+          };
+        },
+        simplifyFraction(numerator, denominator) {
+          if (denominator === 0) {
+            return { numerator: 0, denominator: 1 };
+          }
+
+          let normalizedNumerator = numerator;
+          let normalizedDenominator = denominator;
+
+          if (normalizedDenominator < 0) {
+            normalizedNumerator *= -1;
+            normalizedDenominator *= -1;
+          }
+
+          const divisor = this.greatestCommonDivisor(numerator, denominator);
+          const simplifiedFraction = {
+            numerator: normalizedNumerator / divisor,
+            denominator: normalizedDenominator / divisor,
+          };
+
+          if (
+            simplifiedFraction.denominator > this.maxFractionDenominator
+            || !Number.isSafeInteger(simplifiedFraction.numerator)
+            || !Number.isSafeInteger(simplifiedFraction.denominator)
+          ) {
+            return this.approximateFraction(
+              simplifiedFraction.numerator / simplifiedFraction.denominator,
+              this.maxFractionDenominator,
+            );
+          }
+
+          return simplifiedFraction;
+        },
+        createFractionData(numerator, denominator) {
+          const simplifiedFraction = this.simplifyFraction(numerator, denominator);
+
+          return {
+            ...simplifiedFraction,
+            value: simplifiedFraction.numerator / simplifiedFraction.denominator,
+            fractionText: `${simplifiedFraction.numerator}/${simplifiedFraction.denominator}`,
+          };
+        },
+        addFractions(leftFraction, rightFraction) {
+          const denominatorGcd = this.greatestCommonDivisor(
+            leftFraction.denominator,
+            rightFraction.denominator,
+          );
+
+          return this.createFractionData(
+            leftFraction.numerator * (rightFraction.denominator / denominatorGcd)
+              + rightFraction.numerator * (leftFraction.denominator / denominatorGcd),
+            (leftFraction.denominator / denominatorGcd) * rightFraction.denominator,
+          );
+        },
+        subtractFractions(leftFraction, rightFraction) {
+          const denominatorGcd = this.greatestCommonDivisor(
+            leftFraction.denominator,
+            rightFraction.denominator,
+          );
+
+          return this.createFractionData(
+            leftFraction.numerator * (rightFraction.denominator / denominatorGcd)
+              - rightFraction.numerator * (leftFraction.denominator / denominatorGcd),
+            (leftFraction.denominator / denominatorGcd) * rightFraction.denominator,
+          );
+        },
+        multiplyFractionByRatio(fraction, numerator, denominator) {
+          const numeratorDivisor = this.greatestCommonDivisor(fraction.numerator, denominator);
+          const denominatorDivisor = this.greatestCommonDivisor(fraction.denominator, numerator);
+
+          return this.createFractionData(
+            (fraction.numerator / numeratorDivisor) * (numerator / denominatorDivisor),
+            (fraction.denominator / denominatorDivisor) * (denominator / numeratorDivisor),
+          );
+        },
+        createFractionFromPart(parentFraction, part, totalParts) {
+          return this.multiplyFractionByRatio(parentFraction, part, totalParts);
+        },
+        createSplitParts(total, rng = Math.random) {
+          const partCount = this.randomInt(2, Math.min(total, 4), rng);
+          const cutPoints = new Set();
+
+          while (cutPoints.size < partCount - 1) {
+            cutPoints.add(this.randomInt(1, total - 1, rng));
+          }
+
+          const sortedCuts = [...cutPoints].sort((left, right) => left - right);
+          const parts = [];
+          let previousCut = 0;
+
+          sortedCuts.forEach((cutPoint) => {
+            parts.push(cutPoint - previousCut);
+            previousCut = cutPoint;
+          });
+
+          parts.push(total - previousCut);
+          return parts;
+        },
+        createDotXs(leftEdge, rightEdge, total, parts) {
+          const usableWidth = rightEdge - leftEdge;
+          let accumulated = 0;
+
+          return parts.map((part) => {
+            const dotX = leftEdge + usableWidth * (accumulated / total);
+            accumulated += part;
+            return dotX;
+          });
+        },
+        rowStartX() {
+          return 0;
+        },
+        buildRowItem(rowIndex, itemIndex, xStart, fraction, rng = Math.random) {
+          const widthPx = fraction.value * this.widthUnitPx;
+          const centerX = xStart + widthPx / 2;
+          const halfGap = this.centerGapPx / 2;
+          const leftSegmentStart = xStart + this.segmentPaddingPx;
+          const leftSegmentEnd = centerX - halfGap;
+          const rightSegmentStart = centerX + halfGap;
+          const rightSegmentEnd = xStart + widthPx - this.segmentPaddingPx;
+          const splitNumber = this.randomInt(2, 16, rng);
+          const splitParts = this.createSplitParts(splitNumber, rng);
+          const dotXs = this.createDotXs(
+            leftSegmentStart,
+            rightSegmentEnd,
+            splitNumber,
+            splitParts,
+          );
+
+          return {
+            id: `row-${rowIndex}-item-${itemIndex}`,
+            ...fraction,
+            splitNumber,
+            splitParts,
+            dotXs,
+            visibleDotXs: dotXs,
+            widthPx,
+            xStart,
+            xEnd: xStart + widthPx,
+            centerX,
+            leftSegmentStart,
+            leftSegmentEnd,
+            rightSegmentStart,
+            rightSegmentEnd,
+          };
+        },
+        buildInitialRow(rowIndex, targetRight) {
+          const rng = this.createRowRandom(rowIndex);
+          const rowItems = [];
+          let xCursor = this.rowStartX();
+          let itemIndex = 0;
+
+          while (xCursor <= targetRight) {
+            const item = this.buildRowItem(
+              rowIndex,
+              itemIndex,
+              xCursor,
+              this.createRandomFraction(rng),
+              rng,
+            );
+
+            rowItems.push(item);
+            xCursor = item.xEnd;
+            itemIndex += 1;
+          }
+
+          return rowItems;
+        },
+        collectRowDots(previousRow) {
+          const dots = [];
+          let rowOffset = this.createFractionData(0, 1);
+
+          previousRow.forEach((item, itemIndex) => {
+            let consumedParts = 0;
+
+            item.splitParts.forEach((part, dotIndex) => {
+              dots.push(
+                {
+                  fraction: this.addFractions(
+                    rowOffset,
+                    this.multiplyFractionByRatio(item, consumedParts, item.splitNumber),
+                  ),
+                  itemIndex,
+                  dotIndex,
+                },
+              );
+              consumedParts += part;
+            });
+
+            rowOffset = this.addFractions(rowOffset, item);
+          });
+
+          return {
+            dots,
+            rowEnd: rowOffset,
+          };
+        },
+        buildNextRow(previousRow, rowIndex) {
+          const rng = this.createRowRandom(rowIndex);
+          const { dots, rowEnd } = this.collectRowDots(previousRow);
+          const rowItems = [];
+          const selectedDotKeys = new Set();
+          let xCursor = this.rowStartX();
+          let itemIndex = 0;
+          let currentDotIndex = 0;
+
+          while (currentDotIndex < dots.length) {
+            const maxStep = Math.min(3, dots.length - currentDotIndex - 1);
+            let nextDotIndex = -1;
+
+            if (maxStep > 0) {
+              const candidateIndexes = [];
+
+              for (let step = 1; step <= maxStep; step += 1) {
+                candidateIndexes.push(currentDotIndex + step);
+              }
+
+              const validCandidates = candidateIndexes.filter((candidateIndex) => {
+                const candidateFraction = this.subtractFractions(
+                  dots[candidateIndex].fraction,
+                  dots[currentDotIndex].fraction,
+                );
+
+                return candidateFraction.value * this.widthUnitPx >= this.minItemWidthPx;
+              });
+
+              const targetCandidates = validCandidates.length > 0
+                ? validCandidates
+                : [candidateIndexes[candidateIndexes.length - 1]];
+
+              nextDotIndex = targetCandidates[this.randomInt(0, targetCandidates.length - 1, rng)];
+            }
+
+            const nextBoundary = maxStep > 0
+              ? dots[nextDotIndex].fraction
+              : rowEnd;
+            const currentDot = dots[currentDotIndex];
+            const fraction = this.subtractFractions(nextBoundary, currentDot.fraction);
+            const nextItem = this.buildRowItem(rowIndex, itemIndex, xCursor, fraction, rng);
+
+            selectedDotKeys.add(`${currentDot.itemIndex}:${currentDot.dotIndex}`);
+
+            if (nextDotIndex >= 0) {
+              selectedDotKeys.add(`${dots[nextDotIndex].itemIndex}:${dots[nextDotIndex].dotIndex}`);
+            }
+
+            nextItem.sourceSpan = {
+              startItemIndex: currentDot.itemIndex,
+              startDotIndex: currentDot.dotIndex,
+              endItemIndex: nextDotIndex >= 0 ? dots[nextDotIndex].itemIndex : null,
+              endDotIndex: nextDotIndex >= 0 ? dots[nextDotIndex].dotIndex : null,
+            };
+
+            rowItems.push(nextItem);
+            xCursor = nextItem.xEnd;
+            itemIndex += 1;
+
+            if (maxStep === 0) {
+              break;
+            }
+
+            currentDotIndex = nextDotIndex;
+          }
+
+          return {
+            rowItems,
+            selectedDotKeys,
+            sourceSpans: rowItems.map((item) => item.sourceSpan),
+          };
+        },
+        buildRhythmGlyphs(item, itemIndex, visibleDotIndexes) {
+          const onsetIndexes = [...new Set([0, ...visibleDotIndexes])]
+            .sort((left, right) => left - right);
+
+          const partOffsets = [];
+          let consumedParts = 0;
+
+          item.splitParts.forEach((part) => {
+            partOffsets.push(consumedParts);
+            consumedParts += part;
+          });
+
+          const noteEntries = onsetIndexes.map((dotIndex, onsetIndex) => {
+            const nextDotIndex = onsetIndexes[onsetIndex + 1];
+            const endPart = nextDotIndex === undefined
+              ? item.splitNumber
+              : partOffsets[nextDotIndex];
+            const durationFraction = this.createFractionFromPart(
+              item,
+              endPart - partOffsets[dotIndex],
+              item.splitNumber,
+            );
+            const durationValue = durationFraction.value;
+            const hasStem = durationFraction.value < 1;
+            const isOpenHead = durationFraction.value >= 0.5;
+            const rawFlagCount = Number.isFinite(durationValue) && durationValue > 0 && durationValue < 0.25
+              ? Math.max(0, Math.ceil(Math.log2(0.25 / durationValue)))
+              : 0;
+            const flagCount = Math.min(rawFlagCount, this.maxDisplayedFlagCount);
+            const extraFlagLevels = Math.max(0, flagCount - 1);
+            const headCenterX = item.dotXs[dotIndex];
+            const stemX = headCenterX + this.noteHeadRadiusXPx - 0.5;
+
+            return {
+              id: `${item.id}-note-${dotIndex}`,
+              onsetKey: `${itemIndex}:${dotIndex}`,
+              itemIndex,
+              headCenterX,
+              headCenterY: this.noteHeadCenterY,
+              stemX,
+              stemBaseY: this.noteStemBaseY,
+              stemTopY: this.noteBeamTopY - extraFlagLevels * (this.flagThicknessPx + this.flagGapPx),
+              hasStem,
+              isOpenHead,
+              flagCount,
+              durationNumerator: String(durationFraction.numerator),
+              durationDenominator: String(durationFraction.denominator),
+            };
+          });
+
+          const flagSegments = noteEntries.flatMap((noteEntry) => {
+            if (!noteEntry.hasStem || noteEntry.flagCount === 0) {
+              return [];
+            }
+
+            return Array.from({ length: noteEntry.flagCount }, (_unused, flagIndex) => ({
+              id: `${noteEntry.id}-flag-${flagIndex}`,
+              x: noteEntry.stemX,
+              y: noteEntry.stemTopY + flagIndex * (this.flagThicknessPx + this.flagGapPx),
+              width: this.flagWidthPx,
+            }));
+          });
+
+          return {
+            noteEntries,
+            flagSegments,
+          };
+        },
+        buildRenderedRow(row, selectedDotKeys, nextRowSourceSpans = []) {
+          const noteEntryByOnsetKey = new Map();
+          const noteEntriesInOrder = [];
+          const tieSegmentsByItem = new Map();
+          const connectorSegmentsByItem = new Map();
+
+          const renderedItems = row.map((item, itemIndex) => {
+            const visibleDotIndexes = item.dotXs.reduce((indexes, _dotX, dotIndex) => {
+              if (selectedDotKeys.has(`${itemIndex}:${dotIndex}`)) {
+                indexes.push(dotIndex);
+              }
+
+              return indexes;
+            }, []);
+            const { noteEntries, flagSegments } = this.buildRhythmGlyphs(item, itemIndex, visibleDotIndexes);
+
+            noteEntries.forEach((noteEntry) => {
+              noteEntryByOnsetKey.set(noteEntry.onsetKey, noteEntry);
+              noteEntriesInOrder.push(noteEntry);
+            });
+
+            return {
+              id: item.id,
+              itemIndex,
+              splitNumber: item.splitNumber,
+              centerX: item.centerX,
+              leftSegmentStart: item.leftSegmentStart,
+              leftSegmentEnd: item.leftSegmentEnd,
+              rightSegmentStart: item.rightSegmentStart,
+              rightSegmentEnd: item.rightSegmentEnd,
+              noteEntries,
+              flagSegments,
+              tieSegments: [],
+              connectorSegments: [],
+            };
+          });
+
+          const noteEntryIndexByKey = new Map(
+            noteEntriesInOrder.map((noteEntry, noteIndex) => [noteEntry.onsetKey, noteIndex]),
+          );
+
+          nextRowSourceSpans.forEach((sourceSpan, spanIndex) => {
+            const startKey = `${sourceSpan.startItemIndex}:${sourceSpan.startDotIndex}`;
+            const endKey = sourceSpan.endItemIndex === null
+              ? null
+              : `${sourceSpan.endItemIndex}:${sourceSpan.endDotIndex}`;
+            const startNoteEntry = noteEntryByOnsetKey.get(startKey);
+            const endNoteEntry = endKey === null ? null : noteEntryByOnsetKey.get(endKey);
+
+            if (startNoteEntry) {
+              const segments = connectorSegmentsByItem.get(startNoteEntry.itemIndex) || [];
+
+              segments.push({
+                id: `connector-start-${spanIndex}`,
+                x: startNoteEntry.headCenterX,
+                noteEntry: startNoteEntry,
+              });
+              connectorSegmentsByItem.set(startNoteEntry.itemIndex, segments);
+            }
+
+            if (endNoteEntry) {
+              const segments = connectorSegmentsByItem.get(endNoteEntry.itemIndex) || [];
+
+              segments.push({
+                id: `connector-end-${spanIndex}`,
+                x: endNoteEntry.headCenterX,
+                noteEntry: endNoteEntry,
+              });
+              connectorSegmentsByItem.set(endNoteEntry.itemIndex, segments);
+            }
+
+            const startIndex = noteEntryIndexByKey.get(startKey);
+            const endIndex = endKey === null ? noteEntriesInOrder.length : noteEntryIndexByKey.get(endKey);
+
+            if (startIndex === undefined || endIndex === undefined || endIndex - startIndex !== 2) {
+              return;
+            }
+
+            const firstNote = noteEntriesInOrder[startIndex];
+            const secondNote = noteEntriesInOrder[startIndex + 1];
+            const ties = tieSegmentsByItem.get(firstNote.itemIndex) || [];
+
+            ties.push({
+              id: `tie-${spanIndex}`,
+              x1: firstNote.headCenterX,
+              x2: secondNote.headCenterX,
+            });
+            tieSegmentsByItem.set(firstNote.itemIndex, ties);
+          });
+
+          return renderedItems.map((item) => ({
+            ...item,
+            tieSegments: tieSegmentsByItem.get(item.itemIndex) || [],
+            connectorSegments: connectorSegmentsByItem.get(item.itemIndex) || [],
+          }));
+        },
+        buildHiddenRenderedRow(row) {
+          return row.map((item, itemIndex) => {
+            const { noteEntries, flagSegments } = this.buildRhythmGlyphs(item, itemIndex, []);
+
+            return {
+              id: item.id,
+              itemIndex,
+              splitNumber: item.splitNumber,
+              centerX: item.centerX,
+              leftSegmentStart: item.leftSegmentStart,
+              leftSegmentEnd: item.leftSegmentEnd,
+              rightSegmentStart: item.rightSegmentStart,
+              rightSegmentEnd: item.rightSegmentEnd,
+              noteEntries,
+              flagSegments,
+              tieSegments: [],
+              connectorSegments: [],
+            };
+          });
+        },
+        requiredRowCount() {
+          const viewBottom = Math.max(
+            this.currentScrollTopPx + this.viewportHeight + this.preloadAheadPx - this.topOffsetPx,
+            0,
+          );
+
+          let requiredCount = 0;
+          let accumulatedHeight = 0;
+
+          while (accumulatedHeight < viewBottom) {
+            const existingRow = this.rows[requiredCount];
+
+            accumulatedHeight += existingRow ? this.getRowHeight(existingRow) : this.rowHeightPx;
+            requiredCount += 1;
+          }
+
+          return Math.max(1, requiredCount);
+        },
+        requiredRightPx() {
+          return this.currentScrollLeftPx + this.viewportWidth + this.preloadAheadPx;
+        },
+        requiredLeftPx() {
+          return Math.max(0, this.currentScrollLeftPx - this.horizontalOverscanPx);
+        },
+        generateRows(targetRowCount, targetRight) {
+          const visibleRows = [];
+          let currentRow = this.buildInitialRow(0, targetRight);
+
+          if (targetRowCount === 1) {
+            this.rows = [this.buildHiddenRenderedRow(currentRow)];
+            return;
+          }
+
+          for (let rowIndex = 0; rowIndex < targetRowCount - 1; rowIndex += 1) {
+            const { rowItems: nextRow, selectedDotKeys, sourceSpans } = this.buildNextRow(
+              currentRow,
+              rowIndex + 1,
+            );
+
+            visibleRows.push(this.buildRenderedRow(currentRow, selectedDotKeys, sourceSpans));
+            currentRow = nextRow;
+          }
+
+          visibleRows.push(this.buildHiddenRenderedRow(currentRow));
+          this.rows = visibleRows;
+        },
+        ensureRows() {
+          const { left, top } = this.getScrollPosition();
+
+          this.currentScrollLeftPx = left;
+          this.currentScrollTopPx = top;
+
+          const targetRowCount = Math.max(this.rows.length, this.requiredRowCount());
+          const targetLeft = this.requiredLeftPx();
+          const viewportRight = this.requiredRightPx();
+          this.contentWidthPx = Math.max(this.contentWidthPx, viewportRight);
+
+          const targetRight = viewportRight;
+
+          if (
+            targetRowCount === this.lastVerticalRowCount
+            && targetLeft === this.lastHorizontalLeftPx
+            && targetRight === this.lastHorizontalRightPx
+          ) {
+            return;
+          }
+
+          this.generateRows(targetRowCount, targetRight);
+          this.lastVerticalRowCount = targetRowCount;
+          this.lastHorizontalLeftPx = targetLeft;
+          this.lastHorizontalRightPx = targetRight;
+          this.lastViewportRightPx = viewportRight;
+        },
+        regenerateRows() {
+          this.lastHorizontalLeftPx = -1;
+          this.lastHorizontalRightPx = -1;
+          this.lastViewportRightPx = -1;
+          this.lastVerticalRowCount = -1;
+          this.contentWidthPx = this.viewportWidth;
+          this.rows = [];
+          this.ensureRows();
+        },
+        applyHorizontalScroll(left) {
+          const normalizedLeft = Math.max(0, left);
+          const scroller = document.scrollingElement || document.documentElement;
+
+          window.scrollTo({ left: normalizedLeft, top: this.currentScrollTopPx, behavior: 'auto' });
+          scroller.scrollLeft = normalizedLeft;
+          document.documentElement.scrollLeft = normalizedLeft;
+          document.body.scrollLeft = normalizedLeft;
+          this.currentScrollLeftPx = normalizedLeft;
+        },
+        getScrollPosition() {
+          const scroller = document.scrollingElement || document.documentElement;
+          const left = Math.max(
+            window.scrollX,
+            window.pageXOffset,
+            document.documentElement.scrollLeft,
+            document.body.scrollLeft,
+            scroller.scrollLeft,
+          );
+          const top = Math.max(
+            window.scrollY,
+            window.pageYOffset,
+            document.documentElement.scrollTop,
+            document.body.scrollTop,
+            scroller.scrollTop,
+          );
+
+          return {
+            left,
+            top,
+          };
+        },
+        rowOffset(rowIndex) {
+          return this.topOffsetPx + this.rows
+            .slice(0, rowIndex)
+            .reduce((sum, row) => sum + this.getRowHeight(row), 0);
+        },
+        getRowMaxFlagCount(row) {
+          return row.reduce((rowMax, item) => Math.max(
+            rowMax,
+            ...item.noteEntries.map((noteEntry) => noteEntry.flagCount || 0),
+          ), 0);
+        },
+        getRowHeight(row) {
+          return this.rowHeightPx + this.getRowTopInset(row);
+        },
+        getRowTopInset(row) {
+          const extraFlagLevels = Math.max(0, this.getRowMaxFlagCount(row) - 1);
+          const extraFlagHeight = extraFlagLevels * (this.flagThicknessPx + this.flagGapPx);
+          const builtInClearance = this.noteBeamTopY - (this.lineY + this.stemLengthPx + this.minBracketFlagGapPx);
+
+          return Math.max(0, extraFlagHeight - builtInClearance);
+        },
+        getTiePath(tieSegment, row) {
+          const rowInset = this.getRowTopInset(row);
+          const startX = tieSegment.x1 + this.noteHeadRadiusXPx - 1;
+          const endX = tieSegment.x2 - this.noteHeadRadiusXPx + 1;
+          const radius = Math.min(4, Math.max(2, (endX - startX) / 6));
+          const topY = this.noteHeadCenterY + rowInset + this.noteHeadRadiusYPx + 5;
+          const bottomY = topY + radius;
+
+          return [
+            `M ${startX} ${topY}`,
+            `A ${radius} ${radius} 0 0 0 ${startX + radius} ${bottomY}`,
+            `L ${endX - radius} ${bottomY}`,
+            `A ${radius} ${radius} 0 0 0 ${endX} ${topY}`,
+          ].join(' ');
+        },
+        getDurationBarHalfWidth(noteEntry) {
+          return Math.max(
+            noteEntry.durationNumerator.length,
+            noteEntry.durationDenominator.length,
+          ) * 2.5;
+        },
+        getDurationLabelX(noteEntry) {
+          return noteEntry.headCenterX + this.noteHeadRadiusXPx + 8;
+        },
+        getDurationBarY(noteEntry, row) {
+          return noteEntry.headCenterY + this.getRowTopInset(row) + 2;
+        },
+        getConnectorStartY(connectorSegment, row) {
+          return connectorSegment.noteEntry.headCenterY + this.getRowTopInset(row) + this.noteHeadRadiusYPx + 1;
+        },
+        getConnectorEndY(row) {
+          return this.getRowHeight(row) + this.lineY;
+        },
+        crisp(value) {
+          return Number((value + 0.5).toFixed(1));
+        },
+        handleScroll() {
+          const { left, top } = this.getScrollPosition();
+
+          this.currentScrollLeftPx = left;
+          this.currentScrollTopPx = top;
+          this.ensureRows();
+        },
+        handleResize() {
+          this.syncMetricsFromCss();
+          this.regenerateRows();
+        },
+      },
+      mounted() {
+        this.syncMetricsFromCss();
+        const initialPosition = this.getScrollPosition();
+
+        this.currentScrollLeftPx = initialPosition.left;
+        this.currentScrollTopPx = initialPosition.top;
+
+        this.ensureRows();
+
+        window.addEventListener('scroll', this.handleScroll, { passive: true });
+        window.addEventListener('resize', this.handleResize, { passive: true });
+      },
+      beforeUnmount() {
+        window.removeEventListener('scroll', this.handleScroll);
+        window.removeEventListener('resize', this.handleResize);
+      },
+    });
+
+    app.mount('#app');
+  </script>
+</body>
+</html>
