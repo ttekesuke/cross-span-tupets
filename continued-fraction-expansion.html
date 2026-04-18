@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Continued fraction expansion</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: #ffffff;
+      overflow-x: auto;
+      overflow-y: auto;
+    }
+
+    body {
+      font-family: "Times New Roman", serif;
+    }
+
+    #score {
+      display: block;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <svg
+    id="score"
+    xmlns="http://www.w3.org/2000/svg"
+    role="img"
+    aria-label="Nested continued fraction score"
+  ></svg>
+
+  <script>
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+
+    const config = {
+      radicand: 2,
+      background: '#ffffff',
+      ink: '#111111',
+      tie: '#111111',
+      topPaddingPx: 48,
+      bottomPaddingPx: 120,
+      leftPaddingPx: 28,
+      rightPaddingPx: 76,
+      rightAnchorInsetPx: 34,
+      stepYPx: 84,
+      bracketOffsetXPx: 8,
+      bracketTopRisePx: 22,
+      bracketLengthPx: 10,
+      qLabelOffsetXPx: 22,
+      qLabelBaselineOffsetYPx: 0,
+      noteOffsetXPx: 106,
+      noteBaselineOffsetYPx: 0,
+      questionOffsetXPx: 24,
+      questionBaselineOffsetYPx: 72,
+      squareOffsetXPx: 22,
+      squareBaselineOffsetYPx: 122,
+      tieLiftPx: 10,
+      tieGapPx: 16,
+      moduleGapPx: 18,
+      bufferBelowViewportPx: 240,
+      appendDepthChunk: 5,
+      minimumVisibleRows: 6,
+    };
+
+    const score = document.getElementById('score');
+
+    const state = {
+      depth: 0,
+      modules: [],
+      partialTerms: [],
+      continuedFraction: null,
+    };
+
+    function createSvgElement(name, attributes = {}) {
+      const element = document.createElementNS(SVG_NS, name);
+
+      Object.entries(attributes).forEach(([key, value]) => {
+        element.setAttribute(key, String(value));
+      });
+
+      return element;
+    }
+
+    function appendText(parent, x, y, text, size, anchor = 'start') {
+      const element = createSvgElement('text', {
+        x,
+        y,
+        fill: config.ink,
+        'font-size': size,
+        'text-anchor': anchor,
+      });
+      element.textContent = text;
+      parent.appendChild(element);
+      return element;
+    }
+
+    function estimateTextWidth(text, fontSize) {
+      return text.length * fontSize * 0.56;
+    }
+
+    function getSplitLabelMetrics(denominator) {
+      const baseText = String(denominator);
+      const baseSize = 44;
+      const exponentSize = 20;
+      const colonSize = 44;
+      const baseWidth = estimateTextWidth(baseText, baseSize);
+      const exponentWidth = estimateTextWidth('2', exponentSize);
+      const colonWidth = estimateTextWidth(':', colonSize);
+
+      return {
+        baseText,
+        baseSize,
+        exponentSize,
+        colonSize,
+        baseWidth,
+        exponentWidth,
+        colonWidth,
+        noteStartAdvance: baseWidth + exponentWidth + colonWidth + 20,
+      };
+    }
+
+    function drawSplitLabel(parent, x, baselineY, denominator) {
+      const metrics = getSplitLabelMetrics(denominator);
+
+      const element = createSvgElement('text', {
+        x,
+        y: baselineY,
+        fill: config.ink,
+      });
+      const base = createSvgElement('tspan', {
+        'font-size': metrics.baseSize,
+      });
+      base.textContent = metrics.baseText;
+      element.appendChild(base);
+
+      const exponent = createSvgElement('tspan', {
+        'font-size': metrics.exponentSize,
+        dx: '-0.08em',
+        dy: '-0.52em',
+      });
+      exponent.textContent = '2';
+      element.appendChild(exponent);
+
+      const colon = createSvgElement('tspan', {
+        'font-size': metrics.colonSize,
+        dx: '0.02em',
+        dy: '0.52em',
+      });
+      colon.textContent = ':';
+      element.appendChild(colon);
+
+      parent.appendChild(element);
+
+      return x + metrics.noteStartAdvance;
+    }
+
+    function getSquareLabelMetrics(text) {
+      const baseSize = 28;
+      const exponentSize = 16;
+      const exponentWidth = estimateTextWidth('2', exponentSize);
+      return {
+        baseSize,
+        exponentSize,
+        baseWidth: estimateTextWidth(text, baseSize),
+        exponentWidth,
+      };
+    }
+
+    function drawSquareLabel(parent, x, baselineY, text) {
+      const metrics = getSquareLabelMetrics(text);
+      const element = createSvgElement('text', {
+        x,
+        y: baselineY,
+        fill: config.ink,
+      });
+      const base = createSvgElement('tspan', {
+        'font-size': metrics.baseSize,
+      });
+      base.textContent = text;
+      element.appendChild(base);
+
+      const exponent = createSvgElement('tspan', {
+        'font-size': metrics.exponentSize,
+        dx: '-0.12em',
+        dy: '-0.5em',
+      });
+      exponent.textContent = '2';
+      element.appendChild(exponent);
+
+      parent.appendChild(element);
+      return x + metrics.baseWidth + metrics.exponentWidth * 0.45;
+    }
+
+    function greatestCommonDivisor(left, right) {
+      let a = Math.abs(left);
+      let b = Math.abs(right);
+
+      while (b !== 0) {
+        const remainder = a % b;
+        a = b;
+        b = remainder;
+      }
+
+      return a || 1;
+    }
+
+    function simplifyFraction(numerator, denominator) {
+      if (denominator < 0) {
+        return simplifyFraction(-numerator, -denominator);
+      }
+
+      const divisor = greatestCommonDivisor(numerator, denominator);
+      return {
+        numerator: numerator / divisor,
+        denominator: denominator / divisor,
+      };
+    }
+
+    function addFractions(left, right) {
+      return simplifyFraction(
+        left.numerator * right.denominator + right.numerator * left.denominator,
+        left.denominator * right.denominator,
+      );
+    }
+
+    function reciprocalFraction(fraction) {
+      return simplifyFraction(fraction.denominator, fraction.numerator);
+    }
+
+    function createSquareRootContinuedFraction(radicand) {
+      const a0 = Math.floor(Math.sqrt(radicand));
+
+      if (a0 * a0 === radicand) {
+        throw new Error(`radicand ${radicand} is a perfect square`);
+      }
+
+      let m = 0;
+      let d = 1;
+      let a = a0;
+
+      return {
+        a0,
+        nextTerm() {
+          m = d * a - m;
+          d = (radicand - m * m) / d;
+          a = Math.floor((a0 + m) / d);
+          return a;
+        },
+      };
+    }
+
+    function ensureTerms(requiredCount) {
+      while (state.partialTerms.length < requiredCount) {
+        state.partialTerms.push(state.continuedFraction.nextTerm());
+      }
+    }
+
+    function buildNestedModules(depth) {
+      ensureTerms(depth);
+
+      const selectedTerms = state.partialTerms.slice(0, depth);
+      const modules = [];
+      let childValue = null;
+
+      for (let index = selectedTerms.length - 1; index >= 0; index -= 1) {
+        const integerTerm = selectedTerms[index];
+        const denominatorExpression = childValue
+          ? addFractions({ numerator: integerTerm, denominator: 1 }, childValue)
+          : { numerator: integerTerm, denominator: 1 };
+        const value = reciprocalFraction(denominatorExpression);
+
+        modules.push({
+          integerTerm,
+          denominatorExpression,
+          value,
+          splitLabel: `${value.denominator}^2 :`,
+          squareLabel: `(${value.numerator}/${value.denominator})^2`,
+        });
+
+        childValue = value;
+      }
+
+      return modules;
+    }
+
+    function drawBreveToken(parent, startX, baselineY, integerTerm) {
+      const noteMultiplier = integerTerm / 2;
+      const countLabel = Number.isInteger(noteMultiplier)
+        ? String(noteMultiplier)
+        : `${integerTerm}/2`;
+      appendText(parent, startX, baselineY, countLabel, 52);
+      const countWidth = estimateTextWidth(countLabel, 52);
+      const glyphCenterX = startX + countWidth + 42;
+      const glyphCenterY = baselineY - 18;
+
+      const leftBar = createSvgElement('line', {
+        x1: glyphCenterX - 19,
+        y1: glyphCenterY - 11,
+        x2: glyphCenterX - 19,
+        y2: glyphCenterY + 11,
+        stroke: config.ink,
+        'stroke-width': 2.2,
+      });
+      parent.appendChild(leftBar);
+
+      const rightBar = createSvgElement('line', {
+        x1: glyphCenterX + 19,
+        y1: glyphCenterY - 11,
+        x2: glyphCenterX + 19,
+        y2: glyphCenterY + 11,
+        stroke: config.ink,
+        'stroke-width': 2.2,
+      });
+      parent.appendChild(rightBar);
+
+      const head = createSvgElement('ellipse', {
+        cx: glyphCenterX,
+        cy: glyphCenterY,
+        rx: 15,
+        ry: 11,
+        fill: 'none',
+        stroke: config.ink,
+        'stroke-width': 2.2,
+      });
+      parent.appendChild(head);
+
+      return {
+        centerX: glyphCenterX,
+        centerY: glyphCenterY,
+        leftX: glyphCenterX - 19,
+        rightX: glyphCenterX + 19,
+      };
+    }
+
+    function getBreveMetrics(integerTerm) {
+      const noteMultiplier = integerTerm / 2;
+      const countLabel = Number.isInteger(noteMultiplier)
+        ? String(noteMultiplier)
+        : `${integerTerm}/2`;
+      const countWidth = estimateTextWidth(countLabel, 52);
+
+      return {
+        countWidth,
+        rightX: countWidth + 42 + 19,
+      };
+    }
+
+    function getModuleMetrics(module) {
+      const splitMetrics = getSplitLabelMetrics(module.value.denominator);
+      const breveMetrics = getBreveMetrics(module.integerTerm);
+      const questionWidth = estimateTextWidth('?', 60);
+      const squareMetrics = getSquareLabelMetrics(`(${module.value.numerator}/${module.value.denominator})`);
+      const squareWidth = squareMetrics.baseWidth + estimateTextWidth('2', squareMetrics.exponentSize) + 2;
+      const noteStartX = Math.max(config.noteOffsetXPx, config.qLabelOffsetXPx + splitMetrics.noteStartAdvance);
+      const noteRightX = noteStartX + breveMetrics.rightX;
+      const questionLeftX = config.questionOffsetXPx;
+      const questionRightX = questionLeftX + questionWidth;
+      const squareRightX = config.squareOffsetXPx + squareWidth;
+      const maxRightX = Math.max(noteRightX, questionRightX, squareRightX);
+
+      return {
+        noteRightX,
+        questionLeftX,
+        maxRightX,
+      };
+    }
+
+    function drawTie(parent, startX, startY, endX, endY) {
+      const y = (startY + endY) / 2;
+      const controlY = y + config.tieLiftPx;
+      const path = createSvgElement('path', {
+        d: `M ${startX} ${y} Q ${(startX + endX) / 2} ${controlY} ${endX} ${y}`,
+        fill: 'none',
+        stroke: config.tie,
+        'stroke-width': 2,
+      });
+      parent.appendChild(path);
+    }
+
+    function renderScore() {
+      score.replaceChildren();
+
+      if (state.modules.length === 0) {
+        return;
+      }
+
+      const moduleMetrics = state.modules.map((module) => getModuleMetrics(module));
+      const modulePositions = [];
+      let rightmostOriginX = window.innerWidth - config.rightPaddingPx - config.rightAnchorInsetPx - moduleMetrics[0].maxRightX;
+
+      modulePositions.push(rightmostOriginX);
+
+      for (let index = 1; index < state.modules.length; index += 1) {
+        const childOriginX = modulePositions[index - 1];
+        const childQuestionLeftX = childOriginX + moduleMetrics[index - 1].questionLeftX;
+        const currentOriginX = childQuestionLeftX
+          - moduleMetrics[index].noteRightX
+          - config.tieGapPx
+          - config.moduleGapPx;
+
+        modulePositions.push(currentOriginX);
+      }
+
+      const minOriginX = Math.min(...modulePositions);
+      const originShiftX = minOriginX < config.leftPaddingPx
+        ? config.leftPaddingPx - minOriginX
+        : 0;
+      const shiftedPositions = modulePositions.map((position) => position + originShiftX);
+      const maxRightX = Math.max(
+        ...shiftedPositions.map((position, index) => position + moduleMetrics[index].maxRightX),
+      );
+
+      const width = Math.max(
+        window.innerWidth,
+        maxRightX + config.rightPaddingPx,
+      );
+      const height = Math.max(
+        window.innerHeight,
+        config.topPaddingPx + config.bottomPaddingPx + (state.modules.length - 1) * config.stepYPx + 210,
+      );
+
+      score.setAttribute('width', width);
+      score.setAttribute('height', height);
+      score.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      const background = createSvgElement('rect', {
+        x: 0,
+        y: 0,
+        width,
+        height,
+        fill: config.background,
+      });
+      score.appendChild(background);
+
+      const anchors = [];
+
+      state.modules.forEach((module, index) => {
+        const leftX = shiftedPositions[index];
+        const topY = config.topPaddingPx + index * config.stepYPx;
+        const qLabelX = leftX + config.qLabelOffsetXPx;
+        const qBaselineY = topY + config.qLabelBaselineOffsetYPx;
+        const noteBaselineY = topY + config.noteBaselineOffsetYPx;
+        const questionBaselineY = topY + config.questionBaselineOffsetYPx;
+        const group = createSvgElement('g');
+        const bracketX = qLabelX - 14;
+        const bracketTopY = qBaselineY - config.bracketTopRisePx;
+        const bracketEndX = qLabelX - 4;
+
+        const bracket = createSvgElement('path', {
+          d: `M ${bracketX} ${qBaselineY + 2} L ${bracketX} ${bracketTopY} L ${bracketEndX} ${bracketTopY}`,
+          fill: 'none',
+          stroke: config.ink,
+          'stroke-width': 2.2,
+        });
+        group.appendChild(bracket);
+
+        const noteStartX = drawSplitLabel(
+          group,
+          qLabelX,
+          qBaselineY,
+          module.value.denominator,
+        );
+
+        const noteAnchor = drawBreveToken(
+          group,
+          Math.max(leftX + config.noteOffsetXPx, noteStartX),
+          noteBaselineY,
+          module.integerTerm,
+        );
+
+        appendText(
+          group,
+          leftX + config.questionOffsetXPx,
+          questionBaselineY,
+          '?',
+          60,
+        );
+
+        drawSquareLabel(
+          group,
+          leftX + config.squareOffsetXPx,
+          topY + config.squareBaselineOffsetYPx,
+          `(${module.value.numerator}/${module.value.denominator})`,
+        );
+
+        if (index > 0) {
+          const childAnchor = anchors[index - 1];
+          drawTie(
+            group,
+            noteAnchor.rightX + 8,
+            noteAnchor.centerY,
+            childAnchor.questionLeftX - 8,
+            childAnchor.questionY,
+          );
+        }
+
+        score.appendChild(group);
+
+        anchors.push({
+          questionLeftX: leftX + config.questionOffsetXPx,
+          questionY: questionBaselineY - 6,
+        });
+      });
+    }
+
+    function ensureDepth(targetDepth) {
+      if (state.depth >= targetDepth) {
+        return;
+      }
+
+      state.depth = targetDepth;
+      state.modules = buildNestedModules(state.depth);
+    }
+
+    function minimumDepthForViewport() {
+      return Math.max(
+        config.minimumVisibleRows,
+        Math.ceil((window.innerHeight + config.bufferBelowViewportPx) / config.stepYPx),
+      );
+    }
+
+    function maybeExtendDepth() {
+      const scrollBottom = window.scrollY + window.innerHeight;
+      const pageBottom = document.documentElement.scrollHeight;
+
+      if (pageBottom - scrollBottom > config.bufferBelowViewportPx) {
+        return;
+      }
+
+      ensureDepth(state.depth + config.appendDepthChunk);
+      renderScore();
+    }
+
+    function initialize() {
+      state.continuedFraction = createSquareRootContinuedFraction(config.radicand);
+      ensureDepth(minimumDepthForViewport());
+      renderScore();
+
+      window.addEventListener('scroll', maybeExtendDepth, { passive: true });
+      window.addEventListener('resize', () => {
+        ensureDepth(minimumDepthForViewport());
+        renderScore();
+      }, { passive: true });
+    }
+
+    initialize();
+  </script>
+</body>
+</html>
