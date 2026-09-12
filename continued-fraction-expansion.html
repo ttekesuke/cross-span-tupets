@@ -31,8 +31,14 @@
     .stats-readout { margin-top: 6px; font: 12px/1.45 "Courier New", monospace; }
     .stats-row + .stats-row { margin-top: 2px; }
     .stats-label { display: inline-block; min-width: 58px; font-family: "Times New Roman", serif; }
-    .explanation { max-width: 980px; margin-bottom: 8px; }
     .math-inline { font-family: "Times New Roman", serif; }
+    dialog { max-width: min(1000px, calc(100vw - 40px)); max-height: 90vh; overflow: auto; }
+    .dialog-actions { margin: 0 0 10px; }
+    .demo-step { margin: 12px 0 22px; }
+    #sqrt2-demo { overflow-x: auto; }
+    .demo-notation { position: relative; min-height: 150px; overflow: visible; }
+    .demo-module { position: absolute; }
+    .demo-tie-layer { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 
     #score {
       position: relative;
@@ -50,18 +56,19 @@
       white-space: nowrap;
     }
     .tuplet-bracket {
+      --bracket-line-y: 31px;
       position: relative;
       display: inline-flex;
       justify-content: center;
       align-items: flex-start;
       min-width: 0;
-      height: 48px;
+      height: 42px;
       padding: 0 10px;
     }
     .tuplet-bracket::before {
       content: "";
       position: absolute;
-      top: 22px;
+      top: var(--bracket-line-y);
       left: 0;
       right: 0;
       border-top: 1.7px solid #111;
@@ -69,7 +76,7 @@
     .bracket-hook-left,
     .bracket-hook-right {
       position: absolute;
-      top: 22px;
+      top: var(--bracket-line-y);
       width: 1.7px;
       height: 13px;
       background: #111;
@@ -114,11 +121,23 @@
     .note-token.compact-count { gap: 2px; }
     .count-prefix {
       display: inline-block;
-      align-self: center;
-      margin-right: 1px;
+      align-self: flex-end;
+      margin-right: 2px;
       font-family: "BravuraText", sans-serif;
-      font-size: 24px;
-      line-height: 1;
+      font-size: 31px;
+      line-height: 0.8;
+      transform: translateY(3px);
+    }
+    .font-missing {
+      display: inline-block;
+      font: 12px/1.15 "Courier New", monospace;
+      white-space: nowrap;
+    }
+    .font-missing-token {
+      align-items: flex-end;
+      min-width: max-content;
+      font-size: 12px;
+      line-height: 1.15;
     }
     .note-char { display: inline-block; }
     .dot-char { display: inline-block; margin-left: -0.12em; }
@@ -178,6 +197,7 @@
       <button id="apply-radicand" type="button">適用</button>
       <button id="add-depth-button" type="button">ネストを追加</button>
       <button id="remove-depth-button" type="button">ネストを減らす</button>
+      <button id="open-explanation" type="button">説明</button>
     </div>
     <div class="error-message" id="error-message"></div>
     <div class="stats-readout">
@@ -188,47 +208,44 @@
     </div>
   </div>
 
-  <section class="explanation">
+  <dialog id="explanation-dialog">
+    <form method="dialog" class="dialog-actions"><button type="submit">閉じる</button></form>
+
     <h2>このページでやっていること</h2>
     <ul>
-      <li>√N を単純連分数に展開し、ネストを1段ずつ深くしながら有限近似を表示します。</li>
-      <li>連分数の整数部分 <span class="math-inline">a₀</span> は一番左の音価として置き、その右上から左下へ続くモジュール群が連分数の小数部分を担当します。</li>
-      <li>各モジュールには、その段で得られる有理数 <span class="math-inline">p/q</span> があります。モジュールに入ってくる長さは <span class="math-inline">q/p</span> で、それに <span class="math-inline">(p/q)²</span> を掛けると、出力はちょうど <span class="math-inline">p/q</span> になります。</li>
-      <li>この「入力長 × (p/q)² = p/q」という関係を、連符の分割比として楽譜化しています。</li>
-      <li>連符ブラケット左側の数は <span class="math-inline">q²</span> です。つまり入力長を <span class="math-inline">q²</span> 個の同じ最小音価に分割したものとして扱います。</li>
-      <li>そのうち結果として必要なのは <span class="math-inline">p²</span> 個分なので、モジュール下段の音符列は「最小単位を p² 個ぶん積み上げた長さ」を通常音符へ分解して表示しています。</li>
-      <li>右側の入力長は、その段の連分数整数項と、直前のネストで得た結果の和です。直前の結果はタイで次段へ受け渡されます。</li>
+      <li>√N を単純連分数に展開し、有限段で打ち切った有理数近似を、ネストした連符として記譜します。</li>
+      <li>整数部分 <span class="math-inline">a₀</span> は一番左の音価で、小数部分を表す各段は右上から左下へ連なります。</li>
+      <li>各段の値を <span class="math-inline">r = p/q</span> とすると、その段への入力長は <span class="math-inline">1/r = q/p</span> です。</li>
+      <li>1つの「ブラケット + その下の音符群」が1段分の変換です。ブラケットは入力長を <span class="math-inline">q²</span> 個の最小単位へ分割することを示し、その下の音符群は、その最小単位を <span class="math-inline">p²</span> 個ぶん取り出した出力を示します。</li>
+      <li>したがって1単位は <span class="math-inline">(q/p)/q² = 1/(pq)</span>、出力は <span class="math-inline">p²/(pq) = p/q</span> となります。</li>
+      <li>次の段では、連分数の整数項に前段の出力を加えたものが入力になります。前段から次段への受け渡しはタイで示します。</li>
     </ul>
 
-    <h2>描画方法</h2>
+    <h2>√2 の最初の3段</h2>
+    <div id="sqrt2-demo"></div>
     <ul>
-      <li>音符、符幹、旗、付点、連符数字、連符のコロンは SMuFL 準拠の Bravura Text フォントを使っています。CSSで音符の形を自作するのではなく、音楽フォントの文字グリフをそのまま表示しています。</li>
-      <li>連符ブラケットとタイは長さが周囲の配置によって変わるため、固定グリフではなく線と Bézier 曲線で描画しています。</li>
-      <li>連符の最小単位には、全音符、二分音符、四分音符、八分音符、16分音符、32分音符……という2進系の音価から、表示が極端に長くならないものを自動選択します。</li>
-      <li>結果側の <span class="math-inline">p²</span> 個分は、通常音価と付点音価の和へ厳密に分解します。たとえば25単位なら 24 + 1 とみなし、「付点付きの長い音符 + 最小単位の音符」をタイで結びます。</li>
-      <li>分解は、大きく書ける音価から順に使う貪欲法です。そのため、同じ長さならなるべく少ない音符数で表示されます。</li>
-      <li>非常に大きな同一音価の繰り返しは、音符を何十個も並べず「個数 + 音符グリフ」として圧縮表示します。以前の「81×」のような掛け算記号は使わず、個数だけを音符の前に置きます。</li>
-      <li>ネスト間のタイを描く前に、接続される2つの音符の垂直位置を揃えます。これにより、段をまたぐタイの始点と終点が同じ高さになり、斜めのタイにならないようにしています。</li>
-      <li>横方向の幅は内容から計算します。各モジュールやブラケットに固定の広い最小幅を持たせず、実際に必要な音符・数字・余白ぶんだけ確保します。</li>
+      <li>第1段: <span class="math-inline">p/q = 1/2</span>。入力は倍全音符1個分 = 2。<span class="math-inline">q² = 4</span> 分割し、そのうち <span class="math-inline">p² = 1</span> 単位を取るので、出力は <span class="math-inline">1/2</span>、すなわち二分音符です。</li>
+      <li>第2段: <span class="math-inline">p/q = 2/5</span>。入力は「倍全音符 + 前段の1/2」= <span class="math-inline">5/2</span>。これを <span class="math-inline">25</span> 分割し、<span class="math-inline">4</span> 単位を取るので、出力は <span class="math-inline">2/5</span> です。</li>
+      <li>第3段: <span class="math-inline">p/q = 5/12</span>。入力は「倍全音符 + 前段の2/5」= <span class="math-inline">12/5</span>。これを <span class="math-inline">144</span> 分割し、<span class="math-inline">25</span> 単位を取るので、出力は <span class="math-inline">5/12</span> です。25単位は通常音価と付点音価の和に分解し、必要な複数音符をタイで結びます。</li>
+    </ul>
+
+    <h2>描画と音価分解</h2>
+    <ul>
+      <li>音符、符幹、旗、付点、連符数字、連符のコロンには SMuFL 準拠の Bravura Text を使います。</li>
+      <li>連符の最小単位には、全音符、二分音符、四分音符、八分音符、16分音符、32分音符……という2進系音価から、その段に適したものを選びます。</li>
+      <li>結果側の <span class="math-inline">p²</span> 単位は、通常音価と付点音価の和へ厳密に分解します。大きく書ける音価から順に使うため、通常は少ない音符数で表現できます。</li>
+      <li>同じ音価が非常に多数になる場合は、「個数 + 音符」の形に圧縮して表示します。</li>
+      <li>必要な旗数に対応する Bravura Text のグリフが存在しない場合は、存在しない文字を出す代わりに <code>font missing</code> と理論上の音価（例: <code>1/2048</code>）を表示します。計算自体はその音価のまま継続します。</li>
     </ul>
 
     <h2>数式上の仕組み</h2>
     <ul>
-      <li>ある段の連分数の値を <span class="math-inline">r = p/q</span> とすると、その段への入力は <span class="math-inline">1/r = q/p</span> です。</li>
-      <li>入力長を <span class="math-inline">q²</span> 分割すると、1単位は <span class="math-inline">(q/p) / q² = 1/(pq)</span> になります。</li>
-      <li>その最小単位を <span class="math-inline">p²</span> 個取ると、<span class="math-inline">p²/(pq) = p/q</span> となり、その段の出力長が得られます。</li>
-      <li>つまりブラケットの <span class="math-inline">q²</span> と、結果側の <span class="math-inline">p²</span> は別々の飾りではなく、同じ変換を「総分割数」と「取り出す単位数」の両側から表しています。</li>
-      <li>この仕組みにより、最終的な比率を近い音符へ丸める必要がなく、各有限連分数近似を有理数として厳密に記譜できます。</li>
+      <li>ある段の値を <span class="math-inline">r = p/q</span> とすると、入力は <span class="math-inline">q/p</span> です。</li>
+      <li>入力を <span class="math-inline">q²</span> 分割した1単位は <span class="math-inline">1/(pq)</span> です。</li>
+      <li>その単位を <span class="math-inline">p²</span> 個取ることで <span class="math-inline">p/q</span> が得られます。</li>
+      <li>したがってブラケットの <span class="math-inline">q²</span> と、その下の音符群が表す <span class="math-inline">p²</span> は、1つの変換の「総分割数」と「取り出す単位数」に対応します。</li>
     </ul>
-
-    <h2>一般化</h2>
-    <ul>
-      <li>入力欄に2以上の非平方整数 N を入れると、同じ処理を √N に適用します。√2専用ではありません。</li>
-      <li>連分数と分数計算には BigInt を使っているため、分子・分母が大きくなっても JavaScript の通常の整数精度に丸められません。</li>
-      <li>画面上の小数値は収束確認用です。楽譜構造そのものは小数ではなく、整数と有理数から生成しています。</li>
-      <li>完全平方数は平方根が有理数になり、無限連分数ネストを必要としないため対象外にしています。</li>
-    </ul>
-  </section>
+  </dialog>
 
   <div id="score" role="img" aria-label="Nested continued-fraction tuplet notation"></div>
 
@@ -243,7 +260,6 @@
       stepYPx: 56,
       minStepXPx: 118,
       gapXPx: 22,
-      maxMetronomePower: 10,
       maxDots: 3,
       compactBreveThreshold: 5n,
     };
@@ -286,6 +302,9 @@
     const applyRadicandButton = document.getElementById('apply-radicand');
     const addDepthButton = document.getElementById('add-depth-button');
     const removeDepthButton = document.getElementById('remove-depth-button');
+    const openExplanationButton = document.getElementById('open-explanation');
+    const explanationDialog = document.getElementById('explanation-dialog');
+    const sqrt2Demo = document.getElementById('sqrt2-demo');
     const errorMessage = document.getElementById('error-message');
     const cfValue = document.getElementById('cf-value');
     const approxValue = document.getElementById('approx-value');
@@ -441,7 +460,7 @@
       let k = floorLog2(product);
       const thresholdSquared = 1n << BigInt(2 * k + 1);
       if (product * product >= thresholdSquared) k += 1;
-      return Math.max(0, Math.min(config.maxMetronomePower, k));
+      return Math.max(0, k);
     }
 
     function tupletDigits(value) {
@@ -452,13 +471,33 @@
       return span;
     }
 
+    function noteDurationText(power, dots = 0) {
+      let base;
+      if (power === -1) base = '2';
+      else if (power === 0) base = '1';
+      else base = `1/${(1n << BigInt(power)).toString()}`;
+      if (dots <= 0) return base;
+      const dotNumerator = (1n << BigInt(dots + 1)) - 1n;
+      const dotDenominator = 1n << BigInt(dots);
+      return `${base} × ${dotNumerator.toString()}/${dotDenominator.toString()}`;
+    }
+
     function makeNoteToken(power, dots = 0, extraClass = '') {
       const token = createElement('span', `note-token ${extraClass}`.trim());
       token.dataset.power = String(power);
       token.dataset.dots = String(dots);
 
+      const codepoint = NOTE_CODEPOINT_BY_POWER.get(power);
+      if (codepoint === undefined) {
+        token.classList.add('font-missing-token');
+        const missing = createElement('span', 'font-missing');
+        missing.textContent = `font missing (${noteDurationText(power, dots)})`;
+        token.appendChild(missing);
+        return token;
+      }
+
       const note = createElement('span', 'smufl note-char');
-      note.textContent = char(NOTE_CODEPOINT_BY_POWER.get(power));
+      note.textContent = char(codepoint);
       token.appendChild(note);
 
       for (let i = 0; i < dots; i += 1) {
@@ -544,9 +583,13 @@
       const label = createElement('div', 'tuplet-label');
       label.appendChild(tupletDigits(module.qSquared));
 
-      const unit = createElement('span', 'smufl unit-note');
-      unit.textContent = char(NOTE_CODEPOINT_BY_POWER.get(module.unitPower));
-      unit.title = `written tuplet unit = 1/${2 ** module.unitPower} whole note`;
+      const unitCodepoint = NOTE_CODEPOINT_BY_POWER.get(module.unitPower);
+      const unit = createElement('span', unitCodepoint === undefined ? 'unit-note font-missing' : 'smufl unit-note');
+      unit.dataset.power = String(module.unitPower);
+      unit.textContent = unitCodepoint === undefined
+        ? `font missing (${noteDurationText(module.unitPower)})`
+        : char(unitCodepoint);
+      unit.title = `written tuplet unit = ${noteDurationText(module.unitPower)} whole note`;
       label.appendChild(unit);
 
       const colon = createElement('span', 'smufl tuplet-colon');
@@ -615,26 +658,46 @@
       state.tieLayer = svg;
     }
 
-    function rectRelativeToScore(element) {
+    function rectRelativeTo(element, referenceElement) {
       const rect = element.getBoundingClientRect();
-      const scoreRect = score.getBoundingClientRect();
+      const referenceRect = referenceElement.getBoundingClientRect();
       return {
-        left: rect.left - scoreRect.left,
-        right: rect.right - scoreRect.left,
-        top: rect.top - scoreRect.top,
-        bottom: rect.bottom - scoreRect.top,
-        centerY: (rect.top + rect.bottom) / 2 - scoreRect.top,
+        left: rect.left - referenceRect.left,
+        right: rect.right - referenceRect.left,
+        top: rect.top - referenceRect.top,
+        bottom: rect.bottom - referenceRect.top,
+        centerY: (rect.top + rect.bottom) / 2 - referenceRect.top,
       };
     }
 
-    function drawTie(fromElement, toElement, options = {}) {
-      if (!fromElement || !toElement || !state.tieLayer) return;
-      const from = rectRelativeToScore(fromElement);
-      const to = rectRelativeToScore(toElement);
+    function rectRelativeToScore(element) {
+      return rectRelativeTo(element, score);
+    }
+
+    function noteHeadCenterY(element, referenceElement = score) {
+      const rect = rectRelativeTo(element, referenceElement);
+      if (element.classList.contains('font-missing-token') || element.classList.contains('font-missing')) {
+        return rect.centerY;
+      }
+      const power = Number(element.dataset.power ?? 1);
+      const fontSize = parseFloat(getComputedStyle(element).fontSize) || 45;
+      if (power <= 0) return rect.centerY;
+      return rect.bottom - Math.max(7, fontSize * 0.20);
+    }
+
+    function noteTieY(element, referenceElement = score) {
+      const fontSize = parseFloat(getComputedStyle(element).fontSize) || 45;
+      return noteHeadCenterY(element, referenceElement) + Math.max(4, fontSize * 0.10);
+    }
+
+    function drawTieInLayer(layer, referenceElement, fromElement, toElement, options = {}) {
+      if (!fromElement || !toElement || !layer) return;
+      const from = rectRelativeTo(fromElement, referenceElement);
+      const to = rectRelativeTo(toElement, referenceElement);
       let x1 = options.fromSide === 'left' ? from.left + 4 : from.right - 4;
       let x2 = options.toSide === 'right' ? to.right - 4 : to.left + 4;
-      const fromY = from.bottom - 8;
-      const toY = to.bottom - 8;
+      const fromY = noteTieY(fromElement, referenceElement);
+      const toY = noteTieY(toElement, referenceElement);
       const y = options.forceHorizontal ? (fromY + toY) / 2 : Math.max(fromY, toY);
 
       if (x2 < x1 && options.allowReverse !== false) {
@@ -647,7 +710,11 @@
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('class', 'tie-path');
       path.setAttribute('d', `M ${x1} ${y} C ${midX - 12} ${baseY}, ${midX + 12} ${baseY}, ${x2} ${y}`);
-      state.tieLayer.appendChild(path);
+      layer.appendChild(path);
+    }
+
+    function drawTie(fromElement, toElement, options = {}) {
+      drawTieInLayer(state.tieLayer, score, fromElement, toElement, options);
     }
 
     function sequenceAnchors(sequence) {
@@ -661,22 +728,62 @@
       }
     }
 
+    function maxSupportedPowerInSequence(sequence) {
+      const powers = sequenceAnchors(sequence)
+        .filter(anchor => !anchor.classList.contains('font-missing-token'))
+        .map(anchor => Number(anchor.dataset.power))
+        .filter(Number.isFinite);
+      return powers.length ? Math.max(...powers) : 2;
+    }
+
+    function syncModuleGeometry(module) {
+      const box = module._element;
+      const bracket = box.querySelector('.tuplet-bracket');
+      const label = box.querySelector('.tuplet-label');
+      const unit = box.querySelector('.unit-note');
+      const resultSequence = module._resultSequence;
+      const resultRow = box.querySelector('.result-row');
+
+      bracket.style.width = 'auto';
+      bracket.style.marginBottom = '0px';
+
+      const labelWidth = label.getBoundingClientRect().width;
+      const resultWidth = resultSequence.getBoundingClientRect().width;
+      const bracketWidth = Math.ceil(Math.max(labelWidth + 22, 18 + resultWidth + 10));
+      bracket.style.width = `${bracketWidth}px`;
+
+      let lineY = 31;
+      if (unit && !unit.classList.contains('font-missing')) {
+        lineY = noteHeadCenterY(unit, bracket);
+      }
+      lineY = Math.max(20, Math.min(38, lineY));
+      bracket.style.setProperty('--bracket-line-y', `${lineY}px`);
+
+      const maxPower = maxSupportedPowerInSequence(resultSequence);
+      const flagClearance = Math.max(0, maxPower - 3) * 10;
+      const gap = 2 + flagClearance;
+      bracket.style.marginBottom = `${gap}px`;
+
+      const totalHeight = bracket.getBoundingClientRect().height + gap + resultRow.getBoundingClientRect().height;
+      box.style.height = `${Math.ceil(totalHeight)}px`;
+    }
+
     function alignModuleInputToChildResult(outerModule, childModule) {
       const inputAnchors = sequenceAnchors(outerModule._inputSequence);
       const resultAnchors = sequenceAnchors(childModule._resultSequence);
       if (!inputAnchors.length || !resultAnchors.length) return 0;
-      const inputRect = rectRelativeToScore(inputAnchors[inputAnchors.length - 1]);
-      const resultRect = rectRelativeToScore(resultAnchors[0]);
-      return resultRect.centerY - inputRect.centerY;
+      const inputY = noteHeadCenterY(inputAnchors[inputAnchors.length - 1]);
+      const resultY = noteHeadCenterY(resultAnchors[0]);
+      return resultY - inputY;
     }
 
     function alignRootToOuterResult() {
       const rootAnchors = sequenceAnchors(state._rootSequence);
       const outerResultAnchors = sequenceAnchors(state.modules[state.modules.length - 1]._resultSequence);
       if (!rootAnchors.length || !outerResultAnchors.length) return 0;
-      const rootRect = rectRelativeToScore(rootAnchors[rootAnchors.length - 1]);
-      const outerRect = rectRelativeToScore(outerResultAnchors[0]);
-      return outerRect.centerY - rootRect.centerY;
+      const rootY = noteHeadCenterY(rootAnchors[rootAnchors.length - 1]);
+      const outerY = noteHeadCenterY(outerResultAnchors[0]);
+      return outerY - rootY;
     }
 
     function layoutScore() {
@@ -747,6 +854,138 @@
       }
     }
 
+    function buildStandaloneModules(radicand, depth) {
+      const continuedFraction = createSquareRootContinuedFraction(radicand);
+      const selected = [];
+      for (let i = 0; i < depth; i += 1) selected.push(continuedFraction.nextTerm());
+      const modules = [];
+      let childValue = null;
+      for (let index = selected.length - 1; index >= 0; index -= 1) {
+        const integerTerm = selected[index];
+        const denominatorExpression = childValue
+          ? addFractions(fraction(integerTerm), childValue)
+          : fraction(integerTerm);
+        const value = reciprocalFraction(denominatorExpression);
+        const p = value.numerator;
+        const q = value.denominator;
+        modules.push({
+          sourceTermIndex: index,
+          integerTerm,
+          childValue,
+          denominatorExpression,
+          value,
+          p,
+          q,
+          pSquared: p * p,
+          qSquared: q * q,
+          unitPower: chooseTupletUnitPower(p, q),
+        });
+        childValue = value;
+      }
+      return { a0: continuedFraction.a0, modules };
+    }
+
+    function createRootRowForValue(a0) {
+      const row = createElement('div', 'root-row');
+      const duration = createIntegerSpan(a0);
+      duration.classList.add('root-duration');
+      row.appendChild(duration);
+      row._sequence = duration;
+      return row;
+    }
+
+    function renderSqrt2Demo() {
+      if (!sqrt2Demo || !explanationDialog.open) return;
+      sqrt2Demo.replaceChildren();
+      const demo = createElement('div', 'demo-notation');
+      sqrt2Demo.appendChild(demo);
+
+      const example = buildStandaloneModules(2n, 3);
+      const modules = example.modules;
+      for (const module of modules) {
+        const element = createModuleElement(module);
+        element.classList.add('demo-module');
+        demo.appendChild(element);
+      }
+      const root = createRootRowForValue(example.a0);
+      demo.appendChild(root);
+
+      for (const module of modules) syncModuleGeometry(module);
+
+      const rootWidth = root.getBoundingClientRect().width;
+      const widths = modules.map(module => module._element.getBoundingClientRect().width);
+      const positions = new Array(modules.length);
+      let x = 18 + rootWidth + 28;
+      for (let i = modules.length - 1; i >= 0; i -= 1) {
+        positions[i] = { left: x, top: 12 + i * 54 };
+        x += Math.max(112, widths[i] + 18);
+      }
+      for (let i = 0; i < modules.length; i += 1) {
+        modules[i]._element.style.left = `${positions[i].left}px`;
+        modules[i]._element.style.top = `${positions[i].top}px`;
+      }
+
+      for (let i = 1; i < modules.length; i += 1) {
+        const inputAnchors = sequenceAnchors(modules[i]._inputSequence);
+        const resultAnchors = sequenceAnchors(modules[i - 1]._resultSequence);
+        if (!inputAnchors.length || !resultAnchors.length) continue;
+        const inputY = noteHeadCenterY(inputAnchors[inputAnchors.length - 1], demo);
+        const resultY = noteHeadCenterY(resultAnchors[0], demo);
+        const delta = resultY - inputY;
+        positions[i].top += delta;
+        modules[i]._element.style.top = `${positions[i].top}px`;
+      }
+
+      root.style.left = '18px';
+      root.style.top = `${positions[modules.length - 1].top + 42}px`;
+      const rootAnchors = sequenceAnchors(root._sequence);
+      const outerResultAnchors = sequenceAnchors(modules[modules.length - 1]._resultSequence);
+      if (rootAnchors.length && outerResultAnchors.length) {
+        const rootY = noteHeadCenterY(rootAnchors[rootAnchors.length - 1], demo);
+        const resultY = noteHeadCenterY(outerResultAnchors[0], demo);
+        root.style.top = `${parseFloat(root.style.top) + resultY - rootY}px`;
+      }
+
+      const rightmost = Math.max(...modules.map((module, i) => positions[i].left + widths[i]));
+      const lowest = Math.max(
+        ...modules.map((module, i) => positions[i].top + module._element.getBoundingClientRect().height),
+        parseFloat(root.style.top) + root.getBoundingClientRect().height,
+      );
+      const width = Math.ceil(rightmost + 24);
+      const height = Math.ceil(lowest + 28);
+      demo.style.width = `${width}px`;
+      demo.style.height = `${height}px`;
+
+      const layer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      layer.classList.add('demo-tie-layer');
+      layer.setAttribute('width', width);
+      layer.setAttribute('height', height);
+      layer.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      demo.appendChild(layer);
+
+      const drawSequenceTies = sequence => {
+        const anchors = sequenceAnchors(sequence);
+        for (let i = 0; i < anchors.length - 1; i += 1) {
+          drawTieInLayer(layer, demo, anchors[i], anchors[i + 1], { lift: 7 });
+        }
+      };
+      for (const module of modules) {
+        drawSequenceTies(module._resultSequence);
+        drawSequenceTies(module._inputSequence);
+      }
+      drawSequenceTies(root._sequence);
+      for (let i = 1; i < modules.length; i += 1) {
+        const inputAnchors = sequenceAnchors(modules[i]._inputSequence);
+        const resultAnchors = sequenceAnchors(modules[i - 1]._resultSequence);
+        if (inputAnchors.length && resultAnchors.length) {
+          drawTieInLayer(layer, demo, inputAnchors[inputAnchors.length - 1], resultAnchors[0], { lift: 10, forceHorizontal: true });
+        }
+      }
+      if (rootAnchors.length && outerResultAnchors.length) {
+        drawTieInLayer(layer, demo, rootAnchors[rootAnchors.length - 1], outerResultAnchors[0], { lift: 10, forceHorizontal: true });
+      }
+    }
+
     function renderStats() {
       const outer = state.modules[state.modules.length - 1];
       const approximation = addFractions(fraction(state.a0), outer.value);
@@ -775,6 +1014,7 @@
       }
       score.appendChild(createRootRow());
 
+      for (const module of state.modules) syncModuleGeometry(module);
       const layout = layoutScore();
       requestAnimationFrame(() => renderTies(layout));
       renderStats();
@@ -809,6 +1049,11 @@
           : error.message;
       }
     }
+
+    openExplanationButton.addEventListener('click', () => {
+      explanationDialog.showModal();
+      requestAnimationFrame(renderSqrt2Demo);
+    });
 
     applyRadicandButton.addEventListener('click', applyRadicand);
     radicandInput.addEventListener('keydown', event => {
