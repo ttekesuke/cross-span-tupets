@@ -5,158 +5,389 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Continued fraction expansion</title>
   <style>
+    @font-face {
+      font-family: "BravuraText";
+      src: url("https://cdn.jsdelivr.net/gh/steinbergmedia/bravura@master/redist/woff/BravuraText.woff2") format("woff2");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+
     * { box-sizing: border-box; }
-    html, body { margin: 0; min-height: 100%; background: #fff; overflow: auto; }
-    body { font-family: "Times New Roman", serif; color: #111; }
-    #score { position: relative; display: block; min-height: 100vh; background: #fff; }
-    .controls { position: fixed; top: 16px; left: 16px; z-index: 30; width: min(560px, calc(100vw - 32px)); }
-    .control-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    button, input { height: 40px; border: 2px solid #111; background: #fff; color: #111; font: inherit; }
-    button { padding: 0 14px; cursor: pointer; font-size: 20px; }
-    input { width: 84px; padding: 0 8px; font-size: 20px; }
-    .radical-label { font-size: 24px; display: inline-flex; align-items: center; gap: 2px; }
-    .error-message { min-height: 20px; margin-top: 6px; font-family: sans-serif; font-size: 13px; color: #8b0000; }
-    .stats-readout { margin-top: 10px; padding: 10px 12px; border: 2px solid #111; background: rgba(255,255,255,.94); font: 13px/1.45 "Courier New", monospace; }
-    .stats-row + .stats-row { margin-top: 5px; }
-    .stats-label { font-family: "Times New Roman", serif; margin-right: 6px; }
-    .module-box { position: absolute; display: grid; grid-template-rows: 54px 62px 38px; width: max-content; transition: left 280ms ease, top 280ms ease; }
-    .module-row-top, .module-row-result, .module-row-square { display: flex; align-items: flex-start; white-space: nowrap; }
-    .module-row-top { align-items: baseline; gap: 6px; }
-    .module-row-result { padding-left: 20px; align-items: flex-start; }
-    .module-row-square { padding-left: 22px; }
-    .bracket { width: 14px; height: 26px; border-left: 2.2px solid #111; border-top: 2.2px solid #111; position: relative; top: 3px; flex: 0 0 auto; }
-    .split-label { font-size: 44px; line-height: 1; position: relative; }
-    .split-label sup, .square-label sup { position: relative; font-size: .45em; vertical-align: baseline; line-height: 1; }
-    .split-label sup { top: -.7em; margin-left: -.12em; }
-    .square-label { font-size: 28px; line-height: 1; }
-    .square-label sup { top: -.62em; margin-left: -.14em; }
-    .breve { display: inline-flex; align-items: baseline; gap: 6px; height: 46px; white-space: nowrap; }
-    .breve-count { font-size: 44px; line-height: 1; }
-    .breve-note { position: relative; top: 4px; width: 58px; height: 30px; flex: 0 0 auto; }
-    .breve-head { position: absolute; left: 12px; top: 1px; width: 34px; height: 26px; border: 2.2px solid #111; border-radius: 50%; background: #fff; }
-    .breve-bar { position: absolute; top: 1px; width: 2.2px; height: 26px; background: #111; }
-    .breve-bar.left-outer { left: 0; } .breve-bar.left-inner { left: 5px; }
-    .breve-bar.right-inner { right: 5px; } .breve-bar.right-outer { right: 0; }
-    .result-note-wrap { position: relative; display: inline-flex; flex-direction: column; align-items: center; min-width: 64px; padding-top: 2px; }
-    .result-note-label { font: 14px/1 "Courier New", monospace; min-height: 15px; margin-bottom: 1px; }
-    .note-glyph { position: relative; width: 52px; height: 40px; }
-    .note-head { position: absolute; width: 24px; height: 16px; border-radius: 50%; transform: rotate(-14deg); left: 7px; top: 17px; border: 2px solid #111; background: #fff; }
-    .note-head.filled { background: #111; }
-    .note-stem { position: absolute; left: 29px; top: 2px; width: 2px; height: 29px; background: #111; }
-    .note-flag { position: absolute; left: 30px; width: 16px; height: 7px; border-top: 2px solid #111; border-radius: 0 10px 0 0; transform: skewY(17deg); transform-origin: left top; }
-    .whole .note-stem, .whole .note-flag { display: none; }
-    .half .note-head { background: #fff; }
-    .quarter .note-head, .flagged .note-head { background: #111; }
-    .root-row { position: absolute; display: flex; align-items: flex-start; gap: 6px; transition: left 280ms ease, top 280ms ease; }
-    .root-count { font-size: 34px; line-height: 1.1; padding-top: 8px; }
-    .whole-note-token { position: relative; width: 44px; height: 36px; }
-    .whole-note-token::before { content: ""; position: absolute; left: 8px; top: 10px; width: 28px; height: 18px; border: 2.2px solid #111; border-radius: 50%; transform: rotate(-12deg); background: #fff; }
-    .tie-layer { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; z-index: 5; }
-    .tie-path { fill: none; stroke: #111; stroke-width: 2; vector-effect: non-scaling-stroke; }
+    html, body { margin: 0; min-height: 100%; background: #fff; color: #111; overflow: auto; }
+    body { font-family: "Times New Roman", serif; }
+
+    .controls {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      z-index: 30;
+      width: min(620px, calc(100vw - 28px));
+      padding: 10px 12px;
+      border: 1.5px solid #111;
+      background: rgba(255, 255, 255, 0.95);
+    }
+    .control-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .radical-label { display: inline-flex; align-items: center; gap: 4px; font-size: 24px; }
+    button, input {
+      height: 36px;
+      border: 1.5px solid #111;
+      background: #fff;
+      color: #111;
+      font: inherit;
+    }
+    input { width: 110px; padding: 0 8px; font-size: 18px; }
+    button { padding: 0 12px; cursor: pointer; font-size: 17px; }
+    .error-message { min-height: 18px; margin-top: 5px; font: 12px/1.3 sans-serif; color: #8b0000; }
+    .stats-readout { margin-top: 6px; font: 12px/1.45 "Courier New", monospace; }
+    .stats-row + .stats-row { margin-top: 2px; }
+    .stats-label { display: inline-block; min-width: 58px; font-family: "Times New Roman", serif; }
+
+    #score {
+      position: relative;
+      min-width: 100vw;
+      min-height: 100vh;
+      background: #fff;
+    }
+
+    .module {
+      position: absolute;
+      width: max-content;
+      min-width: 205px;
+      height: 118px;
+      white-space: nowrap;
+    }
+    .tuplet-bracket {
+      position: relative;
+      display: inline-flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-width: 205px;
+      height: 48px;
+      padding: 0 15px;
+    }
+    .tuplet-bracket::before {
+      content: "";
+      position: absolute;
+      top: 22px;
+      left: 0;
+      right: 0;
+      border-top: 1.7px solid #111;
+    }
+    .bracket-hook-left,
+    .bracket-hook-right {
+      position: absolute;
+      top: 22px;
+      width: 1.7px;
+      height: 13px;
+      background: #111;
+    }
+    .bracket-hook-left { left: 0; }
+    .bracket-hook-right { right: 0; }
+    .tuplet-label {
+      position: relative;
+      z-index: 2;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      min-height: 42px;
+      padding: 0 7px;
+      background: #fff;
+    }
+    .smufl { font-family: "BravuraText", sans-serif; font-style: normal; font-weight: normal; }
+    .tuplet-digits { font-size: 29px; line-height: 1; letter-spacing: -0.04em; }
+    .tuplet-colon { font-size: 29px; line-height: 1; }
+    .unit-note { font-size: 40px; line-height: 1; margin-left: 1px; }
+    .input-span {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 5px;
+      min-height: 40px;
+    }
+    .duration-sequence {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 7px;
+      position: relative;
+    }
+    .note-token {
+      position: relative;
+      display: inline-flex;
+      align-items: baseline;
+      min-width: 25px;
+      min-height: 42px;
+      font-size: 45px;
+      line-height: 1;
+    }
+    .note-token.compact-count { gap: 2px; }
+    .count-prefix {
+      display: inline-block;
+      align-self: center;
+      margin-right: 1px;
+      font-family: "BravuraText", sans-serif;
+      font-size: 24px;
+      line-height: 1;
+    }
+    .times-sign {
+      display: inline-block;
+      align-self: center;
+      margin-right: 1px;
+      font: 20px/1 "Times New Roman", serif;
+    }
+    .note-char { display: inline-block; }
+    .dot-char { display: inline-block; margin-left: -0.12em; }
+
+    .result-row {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      min-height: 62px;
+      padding-left: 18px;
+    }
+    .result-sequence {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 10px;
+      min-height: 50px;
+    }
+    .result-caption {
+      position: absolute;
+      top: 47px;
+      left: 20px;
+      font: 11px/1.2 "Courier New", monospace;
+      color: #555;
+    }
+
+    .root-row {
+      position: absolute;
+      display: inline-flex;
+      align-items: baseline;
+      gap: 10px;
+      min-height: 52px;
+    }
+
+    .tie-layer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      overflow: visible;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .tie-path {
+      fill: none;
+      stroke: #111;
+      stroke-width: 1.8;
+      vector-effect: non-scaling-stroke;
+      stroke-linecap: round;
+    }
+
+    .legend {
+      position: fixed;
+      right: 14px;
+      top: 14px;
+      z-index: 25;
+      max-width: min(380px, calc(100vw - 28px));
+      padding: 8px 10px;
+      border: 1px solid #aaa;
+      background: rgba(255,255,255,.93);
+      font: 12px/1.35 sans-serif;
+    }
+    .legend .smufl { font-size: 24px; vertical-align: middle; }
+
+    @media (max-width: 900px) {
+      .legend { display: none; }
+    }
   </style>
 </head>
 <body>
   <div class="controls">
     <div class="control-row">
-      <label class="radical-label">√<input id="radicand-input" type="number" min="2" step="1" value="2" aria-label="Radicand"></label>
+      <label class="radical-label">√<input id="radicand-input" type="text" inputmode="numeric" value="2" aria-label="Radicand"></label>
       <button id="apply-radicand" type="button">apply</button>
       <button id="add-depth-button" type="button">adding nest</button>
+      <button id="remove-depth-button" type="button">remove nest</button>
     </div>
     <div class="error-message" id="error-message"></div>
     <div class="stats-readout">
+      <div class="stats-row"><span class="stats-label">CF:</span><span id="cf-value"></span></div>
       <div class="stats-row"><span class="stats-label">approx:</span><span id="approx-value"></span></div>
       <div class="stats-row"><span class="stats-label" id="truth-label">sqrt(2):</span><span id="truth-value"></span></div>
       <div class="stats-row"><span class="stats-label">error:</span><span id="error-value"></span></div>
-      <div class="stats-row" id="stats-formula"></div>
     </div>
   </div>
 
-  <div id="score" role="img" aria-label="Nested continued fraction score"></div>
+  <div class="legend">
+    The score uses Bravura Text (SMuFL). Tuplet numbers/colon and all note glyphs are font glyphs; brackets and ties are geometric notation primitives.
+  </div>
+
+  <div id="score" role="img" aria-label="Nested continued-fraction tuplet notation"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/decimal.js@10.4.3/decimal.min.js"></script>
   <script>
     const config = {
-      radicand: 2,
-      topPaddingPx: 48,
-      bottomPaddingPx: 40,
-      leftPaddingPx: 28,
-      rightPaddingPx: 76,
-      stepYPx: 58,
-      stageHeightPaddingPx: 24,
-      currentBoxLeftPx: 110,
-      rootNoteLeftPx: 28,
-      resultRowOffsetPx: 54,
-      moduleOverlapPx: 56,
-      minStepXPx: 174,
+      scoreTopPx: 178,
+      leftPaddingPx: 34,
+      rightPaddingPx: 80,
+      bottomPaddingPx: 70,
+      rootReservePx: 170,
+      stepYPx: 62,
+      minStepXPx: 245,
+      gapXPx: 58,
+      maxMetronomePower: 10,
+      maxDots: 3,
+      compactBreveThreshold: 5n,
     };
 
+    const SMUFL = {
+      tuplet0: 0xE880,
+      tupletColon: 0xE88A,
+      metNoteDoubleWhole: 0xECA0,
+      metNoteWhole: 0xECA2,
+      metNoteHalfUp: 0xECA3,
+      metNoteQuarterUp: 0xECA5,
+      metNote8thUp: 0xECA7,
+      metNote16thUp: 0xECA9,
+      metNote32ndUp: 0xECAB,
+      metNote64thUp: 0xECAD,
+      metNote128thUp: 0xECAF,
+      metNote256thUp: 0xECB1,
+      metNote512thUp: 0xECB3,
+      metNote1024thUp: 0xECB5,
+      metAugmentationDot: 0xECB7,
+    };
+
+    const NOTE_CODEPOINT_BY_POWER = new Map([
+      [-1, SMUFL.metNoteDoubleWhole],
+      [0, SMUFL.metNoteWhole],
+      [1, SMUFL.metNoteHalfUp],
+      [2, SMUFL.metNoteQuarterUp],
+      [3, SMUFL.metNote8thUp],
+      [4, SMUFL.metNote16thUp],
+      [5, SMUFL.metNote32ndUp],
+      [6, SMUFL.metNote64thUp],
+      [7, SMUFL.metNote128thUp],
+      [8, SMUFL.metNote256thUp],
+      [9, SMUFL.metNote512thUp],
+      [10, SMUFL.metNote1024thUp],
+    ]);
+
     const score = document.getElementById('score');
-    const addDepthButton = document.getElementById('add-depth-button');
     const radicandInput = document.getElementById('radicand-input');
     const applyRadicandButton = document.getElementById('apply-radicand');
+    const addDepthButton = document.getElementById('add-depth-button');
+    const removeDepthButton = document.getElementById('remove-depth-button');
     const errorMessage = document.getElementById('error-message');
+    const cfValue = document.getElementById('cf-value');
     const approxValue = document.getElementById('approx-value');
     const truthValue = document.getElementById('truth-value');
     const truthLabel = document.getElementById('truth-label');
     const errorValue = document.getElementById('error-value');
-    const statsFormula = document.getElementById('stats-formula');
 
-    Decimal.set({ precision: 50, rounding: Decimal.ROUND_HALF_UP });
+    Decimal.set({ precision: 70, rounding: Decimal.ROUND_HALF_UP });
 
     const state = {
+      radicand: 2n,
       depth: 1,
-      a0: 1,
-      modules: [],
+      a0: 1n,
       partialTerms: [],
       continuedFraction: null,
+      modules: [],
       trueRadicalDecimal: new Decimal(2).sqrt(),
-      moduleElements: new Map(),
-      rootRow: null,
       tieLayer: null,
+      moduleElements: [],
+      rootRow: null,
     };
 
-    function createElement(tag, className, styles = {}) {
+    function createElement(tag, className, text = '') {
       const el = document.createElement(tag);
       if (className) el.className = className;
-      Object.assign(el.style, styles);
+      if (text !== '') el.textContent = text;
       return el;
     }
 
-    function gcd(a, b) {
-      a = Math.abs(a); b = Math.abs(b);
-      while (b) [a, b] = [b, a % b];
-      return a || 1;
+    function char(codepoint) {
+      return String.fromCodePoint(codepoint);
     }
 
-    function simplifyFraction(numerator, denominator) {
-      if (denominator < 0) return simplifyFraction(-numerator, -denominator);
+    function absBigInt(value) {
+      return value < 0n ? -value : value;
+    }
+
+    function gcd(a, b) {
+      a = absBigInt(a);
+      b = absBigInt(b);
+      while (b !== 0n) {
+        const t = a % b;
+        a = b;
+        b = t;
+      }
+      return a || 1n;
+    }
+
+    function fraction(numerator, denominator = 1n) {
+      if (denominator === 0n) throw new Error('zero denominator');
+      if (denominator < 0n) return fraction(-numerator, -denominator);
       const g = gcd(numerator, denominator);
       return { numerator: numerator / g, denominator: denominator / g };
     }
 
     function addFractions(a, b) {
-      return simplifyFraction(a.numerator * b.denominator + b.numerator * a.denominator, a.denominator * b.denominator);
+      return fraction(
+        a.numerator * b.denominator + b.numerator * a.denominator,
+        a.denominator * b.denominator,
+      );
     }
 
-    function reciprocalFraction(f) { return simplifyFraction(f.denominator, f.numerator); }
+    function reciprocalFraction(value) {
+      return fraction(value.denominator, value.numerator);
+    }
+
+    function formatFraction(value) {
+      return `${value.numerator.toString()}/${value.denominator.toString()}`;
+    }
+
+    function fractionToDecimal(value) {
+      return new Decimal(value.numerator.toString()).div(value.denominator.toString());
+    }
+
+    function formatDecimal(value, places = 40) {
+      return value.toDecimalPlaces(places).toFixed(places);
+    }
+
+    function bigintSqrt(value) {
+      if (value < 0n) throw new Error('negative radicand');
+      if (value < 2n) return value;
+      let x0 = 1n << BigInt(Math.ceil(value.toString(2).length / 2));
+      let x1 = (x0 + value / x0) >> 1n;
+      while (x1 < x0) {
+        x0 = x1;
+        x1 = (x0 + value / x0) >> 1n;
+      }
+      return x0;
+    }
 
     function createSquareRootContinuedFraction(radicand) {
-      const a0 = Math.floor(Math.sqrt(radicand));
+      const a0 = bigintSqrt(radicand);
       if (a0 * a0 === radicand) throw new Error('perfect square');
-      let m = 0, d = 1, a = a0;
+      let m = 0n;
+      let d = 1n;
+      let a = a0;
       return {
         a0,
         nextTerm() {
           m = d * a - m;
           d = (radicand - m * m) / d;
-          a = Math.floor((a0 + m) / d);
+          a = (a0 + m) / d;
           return a;
         },
       };
     }
 
     function ensureTerms(count) {
-      while (state.partialTerms.length < count) state.partialTerms.push(state.continuedFraction.nextTerm());
+      while (state.partialTerms.length < count) {
+        state.partialTerms.push(state.continuedFraction.nextTerm());
+      }
     }
 
     function buildNestedModules(depth) {
@@ -164,276 +395,403 @@
       const selected = state.partialTerms.slice(0, depth);
       const modules = [];
       let childValue = null;
-      for (let i = selected.length - 1; i >= 0; i -= 1) {
-        const integerTerm = selected[i];
+
+      for (let index = selected.length - 1; index >= 0; index -= 1) {
+        const integerTerm = selected[index];
         const denominatorExpression = childValue
-          ? addFractions({ numerator: integerTerm, denominator: 1 }, childValue)
-          : { numerator: integerTerm, denominator: 1 };
+          ? addFractions(fraction(integerTerm), childValue)
+          : fraction(integerTerm);
         const value = reciprocalFraction(denominatorExpression);
-        modules.push({ integerTerm, denominatorExpression, value });
+        const p = value.numerator;
+        const q = value.denominator;
+        const unitPower = chooseTupletUnitPower(p, q);
+        modules.push({
+          sourceTermIndex: index,
+          integerTerm,
+          childValue,
+          denominatorExpression,
+          value,
+          p,
+          q,
+          pSquared: p * p,
+          qSquared: q * q,
+          unitPower,
+        });
         childValue = value;
       }
       return modules;
     }
 
-    function formatFraction(f) { return `${f.numerator}/${f.denominator}`; }
-    function fractionToDecimal(f) { return new Decimal(f.numerator).div(f.denominator); }
-    function formatDecimal(d, places = 36) { return d.toDecimalPlaces(places).toFixed(places); }
-
-    function createBreveToken(integerTerm) {
-      const noteMultiplier = integerTerm / 2;
-      const countLabel = Number.isInteger(noteMultiplier) ? String(noteMultiplier) : `${integerTerm}/2`;
-      const wrapper = createElement('div', 'breve');
-      const count = createElement('div', 'breve-count');
-      count.textContent = countLabel;
-      wrapper.appendChild(count);
-      const note = createElement('div', 'breve-note input-note-anchor');
-      ['left-outer','left-inner','right-inner','right-outer'].forEach(name => note.appendChild(createElement('div', `breve-bar ${name}`)));
-      note.appendChild(createElement('div', 'breve-head'));
-      wrapper.appendChild(note);
-      return wrapper;
+    function floorLog2(value) {
+      if (value <= 0n) throw new Error('log2 requires positive value');
+      return value.toString(2).length - 1;
     }
 
-    function chooseWrittenNote(value) {
-      const d = value.numerator / value.denominator;
-      const candidates = [
-        { name: 'breve', duration: 2, flags: -2 },
-        { name: 'whole', duration: 1, flags: -1 },
-        { name: 'half', duration: 1/2, flags: 0 },
-        { name: 'quarter', duration: 1/4, flags: 0 },
-        { name: 'eighth', duration: 1/8, flags: 1 },
-        { name: '16th', duration: 1/16, flags: 2 },
-        { name: '32nd', duration: 1/32, flags: 3 },
-        { name: '64th', duration: 1/64, flags: 4 },
-        { name: '128th', duration: 1/128, flags: 5 },
-      ];
-      let best = candidates[0];
-      let bestScore = Infinity;
-      for (const c of candidates) {
-        const distance = Math.abs(Math.log2(d / c.duration));
-        const flagPenalty = Math.max(0, c.flags) * 0.035;
-        const score = distance + flagPenalty;
-        if (score < bestScore - 1e-12) { best = c; bestScore = score; }
+    function chooseTupletUnitPower(p, q) {
+      const product = p * q;
+      let k = floorLog2(product);
+      const thresholdSquared = 1n << BigInt(2 * k + 1);
+      if (product * product >= thresholdSquared) k += 1;
+      return Math.max(0, Math.min(config.maxMetronomePower, k));
+    }
+
+    function tupletDigits(value) {
+      const span = createElement('span', 'smufl tuplet-digits');
+      for (const digit of value.toString()) {
+        span.append(document.createTextNode(char(SMUFL.tuplet0 + Number(digit))));
       }
-      const base = simplifyFraction(Math.round(best.duration * 128), 128);
-      const ratio = simplifyFraction(value.numerator * base.denominator, value.denominator * base.numerator);
-      const isExact = ratio.numerator === ratio.denominator;
-      const tupletLabel = isExact ? '' : `${ratio.denominator}:${ratio.numerator}`;
-      return { ...best, tupletLabel };
+      return span;
     }
 
-    function createResultNote(value) {
-      const spec = chooseWrittenNote(value);
-      const wrap = createElement('div', 'result-note-wrap result-note-anchor');
-      const label = createElement('div', 'result-note-label');
-      label.textContent = spec.tupletLabel;
-      wrap.appendChild(label);
+    function makeNoteToken(power, dots = 0, extraClass = '') {
+      const token = createElement('span', `note-token ${extraClass}`.trim());
+      token.dataset.power = String(power);
+      token.dataset.dots = String(dots);
 
-      if (spec.name === 'breve') {
-        const breve = createElement('div', 'breve-note');
-        ['left-outer','left-inner','right-inner','right-outer'].forEach(name => breve.appendChild(createElement('div', `breve-bar ${name}`)));
-        breve.appendChild(createElement('div', 'breve-head'));
-        wrap.appendChild(breve);
-        return wrap;
+      const note = createElement('span', 'smufl note-char');
+      note.textContent = char(NOTE_CODEPOINT_BY_POWER.get(power));
+      token.appendChild(note);
+
+      for (let i = 0; i < dots; i += 1) {
+        const dot = createElement('span', 'smufl dot-char');
+        dot.textContent = char(SMUFL.metAugmentationDot);
+        token.appendChild(dot);
       }
-
-      const glyphClass = spec.name === 'whole' ? 'whole' : spec.name === 'half' ? 'half' : spec.flags > 0 ? 'flagged' : 'quarter';
-      const glyph = createElement('div', `note-glyph ${glyphClass}`);
-      const head = createElement('div', `note-head ${glyphClass === 'quarter' || glyphClass === 'flagged' ? 'filled' : ''}`);
-      glyph.appendChild(head);
-      if (spec.name !== 'whole') glyph.appendChild(createElement('div', 'note-stem'));
-      for (let i = 0; i < Math.max(0, spec.flags); i += 1) {
-        const flag = createElement('div', 'note-flag', { top: `${4 + i * 6}px` });
-        glyph.appendChild(flag);
-      }
-      wrap.appendChild(glyph);
-      return wrap;
+      return token;
     }
 
-    function createModuleBox(module) {
-      const group = createElement('div', 'module-box');
-      const top = createElement('div', 'module-row-top');
-      top.appendChild(createElement('div', 'bracket'));
-      const split = createElement('div', 'split-label');
-      split.innerHTML = `${module.value.denominator}<sup>2</sup><span>:</span>`;
-      top.appendChild(split);
-      top.appendChild(createBreveToken(module.integerTerm));
-      group.appendChild(top);
-
-      const result = createElement('div', 'module-row-result');
-      result.appendChild(createResultNote(module.value));
-      group.appendChild(result);
-
-      const sq = createElement('div', 'module-row-square square-label');
-      sq.innerHTML = `(${module.value.numerator}/${module.value.denominator})<sup>2</sup>`;
-      group.appendChild(sq);
-      return group;
+    function candidateTicks(basePower, dots, tickPower) {
+      if (basePower < -1 || basePower > tickPower) return null;
+      const baseShift = tickPower - basePower;
+      const baseTicks = 1n << BigInt(baseShift);
+      if (dots === 0) return baseTicks;
+      if (baseShift < dots) return null;
+      const numerator = (1n << BigInt(dots + 1)) - 1n;
+      return (baseTicks * numerator) >> BigInt(dots);
     }
 
-    function getModuleWidth(module) {
-      const count = module.integerTerm / 2;
-      const countText = Number.isInteger(count) ? String(count) : `${module.integerTerm}/2`;
-      return 14 + 6 + String(module.value.denominator).length * 32 + 40 + countText.length * 26 + 70;
-    }
+    function decomposeDyadicTicks(totalTicks, tickPower) {
+      if (totalTicks <= 0n) return [];
+      const pieces = [];
+      let remaining = totalTicks;
 
-    function getLayout() {
-      const totalHeight = 154;
-      const stageHeight = Math.max(window.innerHeight, totalHeight + config.topPaddingPx + config.bottomPaddingPx + (state.depth - 1) * config.stepYPx + config.stageHeightPaddingPx);
-      const currentTop = stageHeight - config.bottomPaddingPx - totalHeight;
-      const positions = new Map();
-      let previousLeft = config.currentBoxLeftPx;
-      let previousWidth = getModuleWidth(state.modules[state.depth - 1]);
-      for (let age = 0; age < state.depth; age += 1) {
-        const index = state.depth - 1 - age;
-        if (age === 0) positions.set(index, { left: config.currentBoxLeftPx, top: currentTop });
-        else {
-          const stepX = Math.max(previousWidth - config.moduleOverlapPx, config.minStepXPx);
-          const left = previousLeft + stepX;
-          const top = currentTop - age * config.stepYPx;
-          positions.set(index, { left, top });
-          previousLeft = left;
-          previousWidth = getModuleWidth(state.modules[index]);
+      const breveTicks = 1n << BigInt(tickPower + 1);
+      if (remaining >= breveTicks * config.compactBreveThreshold) {
+        const breveCount = remaining / breveTicks;
+        if (breveCount >= config.compactBreveThreshold) {
+          pieces.push({ power: -1, dots: 0, count: breveCount });
+          remaining -= breveCount * breveTicks;
         }
       }
-      const maxRight = Math.max(...state.modules.map((m, i) => positions.get(i).left + getModuleWidth(m)), window.innerWidth - config.rightPaddingPx);
-      return { stageHeight, currentTop, positions, stageWidth: maxRight + config.rightPaddingPx };
+
+      const candidates = [];
+      for (let power = -1; power <= tickPower; power += 1) {
+        for (let dots = 0; dots <= config.maxDots; dots += 1) {
+          const ticks = candidateTicks(power, dots, tickPower);
+          if (ticks !== null && ticks > 0n) candidates.push({ power, dots, ticks });
+        }
+      }
+      candidates.sort((a, b) => {
+        if (a.ticks === b.ticks) return a.dots - b.dots;
+        return a.ticks > b.ticks ? -1 : 1;
+      });
+
+      while (remaining > 0n) {
+        const candidate = candidates.find(item => item.ticks <= remaining);
+        if (!candidate) throw new Error('could not decompose duration');
+        pieces.push({ power: candidate.power, dots: candidate.dots, count: 1n });
+        remaining -= candidate.ticks;
+      }
+      return pieces;
     }
 
-    function ensureTieLayer() {
-      if (state.tieLayer) return;
-      state.tieLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      state.tieLayer.setAttribute('class', 'tie-layer');
-      score.appendChild(state.tieLayer);
+    function createDurationSequenceFromTicks(totalTicks, tickPower, className = '') {
+      const sequence = createElement('span', `duration-sequence ${className}`.trim());
+      const pieces = decomposeDyadicTicks(totalTicks, tickPower);
+      const anchors = [];
+
+      for (const piece of pieces) {
+        const token = makeNoteToken(piece.power, piece.dots, 'tie-anchor');
+        if (piece.count > 1n) {
+          token.classList.add('compact-count');
+          const prefix = tupletDigits(piece.count);
+          prefix.classList.add('count-prefix');
+          token.insertBefore(prefix, token.firstChild);
+          const times = createElement('span', 'times-sign', '×');
+          token.insertBefore(times, token.querySelector('.note-char'));
+        }
+        sequence.appendChild(token);
+        anchors.push(token);
+      }
+      sequence._tieAnchors = anchors;
+      return sequence;
     }
 
-    function pointFor(element, side) {
-      const r = element.getBoundingClientRect();
-      const s = score.getBoundingClientRect();
+    function createIntegerSpan(integerTerm) {
+      return createDurationSequenceFromTicks(integerTerm, 0, 'input-duration');
+    }
+
+    function createTupletLabel(module) {
+      const label = createElement('div', 'tuplet-label');
+      label.appendChild(tupletDigits(module.qSquared));
+
+      const unit = createElement('span', 'smufl unit-note');
+      unit.textContent = char(NOTE_CODEPOINT_BY_POWER.get(module.unitPower));
+      unit.title = `written tuplet unit = 1/${2 ** module.unitPower} whole note`;
+      label.appendChild(unit);
+
+      const colon = createElement('span', 'smufl tuplet-colon');
+      colon.textContent = char(SMUFL.tupletColon);
+      label.appendChild(colon);
+
+      const inputSpan = createElement('span', 'input-span');
+      const integerDuration = createIntegerSpan(module.integerTerm);
+      inputSpan.appendChild(integerDuration);
+      label.appendChild(inputSpan);
+
+      module._inputSequence = integerDuration;
+      return label;
+    }
+
+    function createResultSequence(module) {
+      const sequence = createDurationSequenceFromTicks(module.pSquared, module.unitPower, 'result-sequence');
+      sequence.title = `${module.pSquared.toString()} written unit(s) => actual duration ${formatFraction(module.value)}`;
+      module._resultSequence = sequence;
+      return sequence;
+    }
+
+    function createModuleElement(module) {
+      const box = createElement('div', 'module');
+      box.title = [
+        `value = ${formatFraction(module.value)}`,
+        `input = ${formatFraction(module.denominatorExpression)}`,
+        `q² = ${module.qSquared.toString()}`,
+        `p² = ${module.pSquared.toString()}`,
+      ].join('\n');
+
+      const bracket = createElement('div', 'tuplet-bracket');
+      bracket.appendChild(createElement('span', 'bracket-hook-left'));
+      bracket.appendChild(createTupletLabel(module));
+      bracket.appendChild(createElement('span', 'bracket-hook-right'));
+      box.appendChild(bracket);
+
+      const resultRow = createElement('div', 'result-row');
+      resultRow.appendChild(createResultSequence(module));
+      resultRow.appendChild(createElement('div', 'result-caption', formatFraction(module.value)));
+      box.appendChild(resultRow);
+
+      module._element = box;
+      return box;
+    }
+
+    function createRootRow() {
+      const row = createElement('div', 'root-row');
+      const duration = createIntegerSpan(state.a0);
+      duration.classList.add('root-duration');
+      row.appendChild(duration);
+      state.rootRow = row;
+      state._rootSequence = duration;
+      return row;
+    }
+
+    function ensureTieLayer(width, height) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.classList.add('tie-layer');
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      score.appendChild(svg);
+      state.tieLayer = svg;
+    }
+
+    function rectRelativeToScore(element) {
+      const rect = element.getBoundingClientRect();
+      const scoreRect = score.getBoundingClientRect();
       return {
-        x: (side === 'left' ? r.left : side === 'right' ? r.right : r.left + r.width / 2) - s.left,
-        y: r.bottom - s.top - 4,
+        left: rect.left - scoreRect.left,
+        right: rect.right - scoreRect.left,
+        top: rect.top - scoreRect.top,
+        bottom: rect.bottom - scoreRect.top,
       };
     }
 
-    function addTie(start, end) {
+    function drawTie(fromElement, toElement, options = {}) {
+      if (!fromElement || !toElement || !state.tieLayer) return;
+      const from = rectRelativeToScore(fromElement);
+      const to = rectRelativeToScore(toElement);
+      let x1 = options.fromSide === 'left' ? from.left + 4 : from.right - 4;
+      let x2 = options.toSide === 'right' ? to.right - 4 : to.left + 4;
+      const y1 = from.bottom - 8;
+      const y2 = to.bottom - 8;
+
+      if (x2 < x1 && options.allowReverse !== false) [x1, x2] = [x2, x1];
+      if (Math.abs(x2 - x1) < 10) return;
+
+      const midX = (x1 + x2) / 2;
+      const baseY = Math.max(y1, y2) + (options.lift || 8);
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('class', 'tie-path');
-      const dx = end.x - start.x;
-      const sag = Math.min(20, Math.max(8, Math.abs(dx) * 0.06));
-      const c1x = start.x + dx * .33;
-      const c2x = start.x + dx * .67;
-      path.setAttribute('d', `M ${start.x} ${start.y} C ${c1x} ${start.y + sag}, ${c2x} ${end.y + sag}, ${end.x} ${end.y}`);
+      path.setAttribute('d', `M ${x1} ${y1} C ${midX - 12} ${baseY}, ${midX + 12} ${baseY}, ${x2} ${y2}`);
       state.tieLayer.appendChild(path);
     }
 
-    function syncRootRow(currentTop) {
-      if (!state.rootRow) {
-        const row = createElement('div', 'root-row');
-        const count = createElement('div', 'root-count');
-        const note = createElement('div', 'whole-note-token root-note-anchor');
-        row.appendChild(count); row.appendChild(note);
-        state.rootRow = { element: row, count, note };
-        score.appendChild(row);
-      }
-      state.rootRow.count.textContent = state.a0 === 1 ? '' : `${state.a0}×`;
-      state.rootRow.element.style.left = `${config.rootNoteLeftPx}px`;
-      state.rootRow.element.style.top = `${currentTop + config.resultRowOffsetPx + 7}px`;
+    function sequenceAnchors(sequence) {
+      return sequence && sequence._tieAnchors ? sequence._tieAnchors : [];
     }
 
-    function syncTies(layout) {
-      ensureTieLayer();
-      state.tieLayer.setAttribute('width', layout.stageWidth);
-      state.tieLayer.setAttribute('height', layout.stageHeight);
-      state.tieLayer.setAttribute('viewBox', `0 0 ${layout.stageWidth} ${layout.stageHeight}`);
-      state.tieLayer.replaceChildren();
+    function drawInternalTies(sequence) {
+      const anchors = sequenceAnchors(sequence);
+      for (let i = 0; i < anchors.length - 1; i += 1) drawTie(anchors[i], anchors[i + 1], { lift: 7 });
+    }
 
-      for (let index = 0; index < state.depth - 1; index += 1) {
-        const shallow = state.moduleElements.get(index);
-        const deeper = state.moduleElements.get(index + 1);
-        if (!shallow || !deeper) continue;
-        const from = shallow.querySelector('.result-note-anchor');
-        const to = deeper.querySelector('.input-note-anchor');
-        if (!from || !to) continue;
-        addTie(pointFor(from, 'left'), pointFor(to, 'right'));
+    function layoutScore() {
+      const modules = state.modules;
+      const widths = modules.map(module => Math.max(205, module._element.getBoundingClientRect().width));
+      const positions = new Array(modules.length);
+      let x = config.leftPaddingPx + config.rootReservePx;
+
+      for (let i = modules.length - 1; i >= 0; i -= 1) {
+        positions[i] = { left: x, top: config.scoreTopPx + i * config.stepYPx };
+        x += Math.max(config.minStepXPx, widths[i] + config.gapXPx);
       }
 
-      const outermost = state.moduleElements.get(state.depth - 1);
-      if (outermost && state.rootRow) {
-        const from = outermost.querySelector('.result-note-anchor');
-        if (from) addTie(pointFor(from, 'left'), pointFor(state.rootRow.note, 'right'));
+      for (let i = 0; i < modules.length; i += 1) {
+        modules[i]._element.style.left = `${positions[i].left}px`;
+        modules[i]._element.style.top = `${positions[i].top}px`;
+      }
+
+      const outer = modules[modules.length - 1];
+      const outerPosition = positions[modules.length - 1];
+      state.rootRow.style.left = `${config.leftPaddingPx}px`;
+      state.rootRow.style.top = `${outerPosition.top + 49}px`;
+
+      const rootWidth = state.rootRow.getBoundingClientRect().width;
+      if (rootWidth + config.leftPaddingPx + 35 > outerPosition.left + 18) {
+        const shift = rootWidth + config.leftPaddingPx + 55 - (outerPosition.left + 18);
+        positions.forEach(position => { position.left += shift; });
+        for (let i = 0; i < modules.length; i += 1) modules[i]._element.style.left = `${positions[i].left}px`;
+      }
+
+      const rightmost = Math.max(...modules.map((module, i) => positions[i].left + widths[i]));
+      const bottom = Math.max(window.innerHeight, outerPosition.top + 150 + config.bottomPaddingPx);
+      const width = Math.max(window.innerWidth, rightmost + config.rightPaddingPx);
+      score.style.width = `${width}px`;
+      score.style.height = `${bottom}px`;
+      return { width, height: bottom };
+    }
+
+    function renderTies(layout) {
+      ensureTieLayer(layout.width, layout.height);
+
+      for (const module of state.modules) {
+        drawInternalTies(module._resultSequence);
+        drawInternalTies(module._inputSequence);
+      }
+      drawInternalTies(state._rootSequence);
+
+      for (let i = 1; i < state.modules.length; i += 1) {
+        const outer = state.modules[i];
+        const child = state.modules[i - 1];
+        const inputAnchors = sequenceAnchors(outer._inputSequence);
+        const resultAnchors = sequenceAnchors(child._resultSequence);
+        if (inputAnchors.length && resultAnchors.length) {
+          drawTie(inputAnchors[inputAnchors.length - 1], resultAnchors[0], { lift: 10 });
+        }
+      }
+
+      const rootAnchors = sequenceAnchors(state._rootSequence);
+      const outerResultAnchors = sequenceAnchors(state.modules[state.modules.length - 1]._resultSequence);
+      if (rootAnchors.length && outerResultAnchors.length) {
+        drawTie(rootAnchors[rootAnchors.length - 1], outerResultAnchors[0], { lift: 10 });
       }
     }
 
     function renderStats() {
-      if (!state.modules.length) return;
-      const tail = state.modules[state.modules.length - 1].value;
-      const approximation = addFractions({ numerator: state.a0, denominator: 1 }, tail);
-      const dec = fractionToDecimal(approximation);
-      approxValue.textContent = formatDecimal(dec);
-      truthLabel.textContent = `sqrt(${config.radicand}):`;
+      const outer = state.modules[state.modules.length - 1];
+      const approximation = addFractions(fraction(state.a0), outer.value);
+      const approximationDecimal = fractionToDecimal(approximation);
+      const errorDecimal = approximationDecimal.sub(state.trueRadicalDecimal).abs();
+      const terms = state.partialTerms.slice(0, state.depth).map(value => value.toString());
+
+      cfValue.textContent = `[${state.a0.toString()}; ${terms.join(', ')}]`;
+      approxValue.textContent = `${formatFraction(approximation)} = ${formatDecimal(approximationDecimal)}`;
+      truthLabel.textContent = `sqrt(${state.radicand.toString()}):`;
       truthValue.textContent = formatDecimal(state.trueRadicalDecimal);
-      errorValue.textContent = formatDecimal(dec.sub(state.trueRadicalDecimal).abs());
-      statsFormula.textContent = `${state.a0} + ${formatFraction(tail)} = ${formatFraction(approximation)}`;
+      errorValue.textContent = formatDecimal(errorDecimal);
     }
 
     function renderScore() {
       state.modules = buildNestedModules(state.depth);
-      const layout = getLayout();
-      score.style.width = `${layout.stageWidth}px`;
-      score.style.height = `${layout.stageHeight}px`;
-      syncRootRow(layout.currentTop);
+      state.moduleElements = [];
+      state.rootRow = null;
+      state.tieLayer = null;
+      score.replaceChildren();
 
-      for (const [index, el] of state.moduleElements.entries()) {
-        if (index >= state.depth) { el.remove(); state.moduleElements.delete(index); }
+      for (const module of state.modules) {
+        const element = createModuleElement(module);
+        state.moduleElements.push(element);
+        score.appendChild(element);
       }
-      for (let index = 0; index < state.depth; index += 1) {
-        let el = state.moduleElements.get(index);
-        if (!el) {
-          el = createModuleBox(state.modules[index]);
-          score.appendChild(el);
-          state.moduleElements.set(index, el);
-        } else {
-          const replacement = createModuleBox(state.modules[index]);
-          el.replaceWith(replacement);
-          state.moduleElements.set(index, replacement);
-          el = replacement;
-        }
-        const pos = layout.positions.get(index);
-        el.style.left = `${pos.left}px`;
-        el.style.top = `${pos.top}px`;
-      }
-      requestAnimationFrame(() => requestAnimationFrame(() => syncTies(layout)));
+      score.appendChild(createRootRow());
+
+      const layout = layoutScore();
+      requestAnimationFrame(() => renderTies(layout));
       renderStats();
     }
 
-    function resetForRadicand(radicand) {
-      const n = Number(radicand);
-      if (!Number.isInteger(n) || n < 2) throw new Error('2以上の整数を入力してください。');
-      const root = Math.floor(Math.sqrt(n));
-      if (root * root === n) throw new Error('完全平方数では連分数ネストが不要です。別の整数を入力してください。');
-      config.radicand = n;
+    function resetForRadicand(value) {
+      const continuedFraction = createSquareRootContinuedFraction(value);
+      state.radicand = value;
       state.depth = 1;
+      state.a0 = continuedFraction.a0;
       state.partialTerms = [];
-      state.continuedFraction = createSquareRootContinuedFraction(n);
-      state.a0 = state.continuedFraction.a0;
-      state.trueRadicalDecimal = new Decimal(n).sqrt();
-      for (const el of state.moduleElements.values()) el.remove();
-      state.moduleElements.clear();
-      if (state.rootRow) { state.rootRow.element.remove(); state.rootRow = null; }
-      if (state.tieLayer) { state.tieLayer.remove(); state.tieLayer = null; }
+      state.continuedFraction = continuedFraction;
+      state.trueRadicalDecimal = new Decimal(value.toString()).sqrt();
       errorMessage.textContent = '';
       renderScore();
     }
 
-    addDepthButton.addEventListener('click', () => { state.depth += 1; renderScore(); });
-    applyRadicandButton.addEventListener('click', () => {
-      try { resetForRadicand(radicandInput.value); }
-      catch (error) { errorMessage.textContent = error.message; }
-    });
-    radicandInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') applyRadicandButton.click(); });
-    window.addEventListener('resize', renderScore, { passive: true });
+    function parseRadicand() {
+      const raw = radicandInput.value.trim();
+      if (!/^\d+$/.test(raw)) throw new Error('2以上の整数を入力してください。');
+      const value = BigInt(raw);
+      if (value < 2n) throw new Error('2以上の整数を入力してください。');
+      return value;
+    }
 
-    resetForRadicand(2);
+    function applyRadicand() {
+      try {
+        resetForRadicand(parseRadicand());
+      } catch (error) {
+        errorMessage.textContent = error.message === 'perfect square'
+          ? '完全平方数は連分数ネストの対象外です。平方数ではない整数を入力してください。'
+          : error.message;
+      }
+    }
+
+    applyRadicandButton.addEventListener('click', applyRadicand);
+    radicandInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') applyRadicand();
+    });
+    addDepthButton.addEventListener('click', () => {
+      state.depth += 1;
+      renderScore();
+      requestAnimationFrame(() => window.scrollTo({ top: Math.max(0, score.scrollHeight - window.innerHeight), behavior: 'smooth' }));
+    });
+    removeDepthButton.addEventListener('click', () => {
+      if (state.depth <= 1) return;
+      state.depth -= 1;
+      renderScore();
+    });
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(renderScore, 80);
+    }, { passive: true });
+
+    resetForRadicand(2n);
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => renderScore());
   </script>
 </body>
 </html>
