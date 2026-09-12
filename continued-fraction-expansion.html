@@ -43,10 +43,9 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
 .note-body{position:relative;display:inline-block;flex:0 0 auto;overflow:visible;width:30px;height:32px}
 .notehead{position:absolute;left:0;top:0;font-size:45px;line-height:1}
 .token.unit .notehead{font-size:40px}
-.stem-down{position:absolute;left:2px;top:18px;width:1.7px;background:#111}
-.token.unit .stem-down{left:2px;top:16px}
-.flag-down{position:absolute;left:-5px;font-size:45px;line-height:1}
-.token.unit .flag-down{font-size:40px;left:-4px}
+.stem-down{position:absolute;width:1.7px;background:#111}
+.flag-down{position:absolute;font-size:45px;line-height:1}
+.token.unit .flag-down{font-size:40px}
 .dot{position:absolute;left:24px;top:6px;font-size:34px;line-height:1}
 .head-top-marker,.head-center-marker,.head-bottom-marker{position:absolute;width:1px;height:1px;pointer-events:none}
 
@@ -213,49 +212,85 @@ function digits(n){
 }
 function durText(p){return p===-1?'2':p===0?'1':`1/${1n<<BigInt(p)}`}
 
-function addHeadMarkers(body,unit=false){
-  const top=unit?7:8;
-  const bottom=unit?20:23;
-  const x=unit?10:12;
+const glyphMetricCanvas=document.createElement('canvas');
+const glyphMetricContext=glyphMetricCanvas.getContext('2d');
+const glyphMetricCache=new Map();
+function glyphInkBox(codepoint,fontSize){
+  const key=`${codepoint}:${fontSize}`;
+  if(glyphMetricCache.has(key))return glyphMetricCache.get(key);
+  const fallback={left:0,right:fontSize*.55,top:fontSize*.38,bottom:fontSize*.68};
+  if(!glyphMetricContext){glyphMetricCache.set(key,fallback);return fallback}
+  glyphMetricContext.font=`${fontSize}px BravuraText`;
+  glyphMetricContext.textAlign='left';
+  glyphMetricContext.textBaseline='alphabetic';
+  const m=glyphMetricContext.measureText(ch(codepoint));
+  const fontAscent=Number.isFinite(m.fontBoundingBoxAscent)?m.fontBoundingBoxAscent:m.actualBoundingBoxAscent;
+  const fontDescent=Number.isFinite(m.fontBoundingBoxDescent)?m.fontBoundingBoxDescent:m.actualBoundingBoxDescent;
+  const actualAscent=Number.isFinite(m.actualBoundingBoxAscent)?m.actualBoundingBoxAscent:fontSize*.32;
+  const actualDescent=Number.isFinite(m.actualBoundingBoxDescent)?m.actualBoundingBoxDescent:fontSize*.12;
+  const fontHeight=fontAscent+fontDescent;
+  const leading=fontSize-fontHeight;
+  const baseline=leading/2+fontAscent;
+  const box={
+    left:-(Number.isFinite(m.actualBoundingBoxLeft)?m.actualBoundingBoxLeft:0),
+    right:Number.isFinite(m.actualBoundingBoxRight)?m.actualBoundingBoxRight:fontSize*.55,
+    top:baseline-actualAscent,
+    bottom:baseline+actualDescent,
+  };
+  if(!Number.isFinite(box.top)||!Number.isFinite(box.bottom)||box.bottom<=box.top){Object.assign(box,fallback)}
+  glyphMetricCache.set(key,box);
+  return box;
+}
+function addHeadMarkers(body,box){
+  const x=(box.left+box.right)/2;
   const topM=el('i','head-top-marker');
-  topM.style.top=`${top}px`;topM.style.left=`${x}px`;
+  topM.style.top=`${box.top}px`;topM.style.left=`${x}px`;
   const centerM=el('i','head-center-marker');
-  centerM.style.top=`${(top+bottom)/2}px`;centerM.style.left=`${x}px`;
+  centerM.style.top=`${(box.top+box.bottom)/2}px`;centerM.style.left=`${x}px`;
   const bottomM=el('i','head-bottom-marker');
-  bottomM.style.top=`${bottom}px`;bottomM.style.left=`${x}px`;
+  bottomM.style.top=`${box.bottom}px`;bottomM.style.left=`${x}px`;
   body.append(topM,centerM,bottomM);
 }
 function noteBody(power,unit=false){
   const body=el('span','note-body');
   const fs=unit?40:45;
-  const flags=Math.max(0,power-2);
   const noteheadCode=power===-1?S.doubleWholeHead:power===0?S.wholeHead:power===1?S.halfHead:S.blackHead;
+  const box=glyphInkBox(noteheadCode,fs);
   const head=el('span','smufl notehead',ch(noteheadCode));
   head.style.fontSize=`${fs}px`;
   body.append(head);
-  addHeadMarkers(body,unit);
+  addHeadMarkers(body,box);
+  body.style.width=`${Math.max(unit?27:30,Math.ceil(box.right-box.left+8))}px`;
+  body.style.height=`${Math.max(32,Math.ceil(box.bottom+5))}px`;
 
   if(power>=1){
     const flagCount=Math.max(0,power-2);
     const extraFlags=Math.max(0,flagCount-2);
-    const stemStart=unit?16:18;
+    const stemX=Math.round(box.left+1);
+    const stemStart=Math.round((box.top+box.bottom)/2);
     const stemHeight=(unit?25:28)+Math.max(0,flagCount-1)*7;
-    body.style.height=`${Math.max(unit?31:34,stemStart+stemHeight+2)}px`;
+    body.style.height=`${Math.max(parseFloat(body.style.height),stemStart+stemHeight+3)}px`;
     const stem=el('span','stem-down');
+    stem.style.left=`${stemX}px`;
+    stem.style.top=`${stemStart}px`;
     stem.style.height=`${stemHeight}px`;
     body.append(stem);
 
+    const flagLeft=stemX-(unit?6:7);
     if(flagCount===1){
       const flag=el('span','smufl flag-down',ch(S.flag8d));
-      flag.style.top=`${unit?26:29}px`;
+      flag.style.left=`${flagLeft}px`;
+      flag.style.top=`${stemStart+10}px`;
       body.append(flag);
     }else if(flagCount>=2){
       const base=el('span','smufl flag-down',ch(S.flag16d));
-      base.style.top=`${unit?24:27}px`;
+      base.style.left=`${flagLeft}px`;
+      base.style.top=`${stemStart+8}px`;
       body.append(base);
       for(let i=0;i<extraFlags;i++){
         const flag=el('span','smufl flag-down',ch(S.flagInternalD));
-        flag.style.top=`${(unit?30:33)+i*7}px`;
+        flag.style.left=`${flagLeft}px`;
+        flag.style.top=`${stemStart+14+i*7}px`;
         body.append(flag);
       }
     }
@@ -377,7 +412,6 @@ function syncGeom(m){
   const box=m._el,br=box.querySelector('.bracket'),label=box.querySelector('.label'),result=m._out,unit=m._unit,input=m._in;
   br.style.width='auto';
 
-  // Align the notehead top on the right side of the colon to the unit notehead top.
   const inputAnchors=anchors(input);
   if(inputAnchors.length){
     input.style.transform='translateY(0px)';
@@ -392,9 +426,8 @@ function syncGeom(m){
   const needed=Math.ceil(Math.max(labelRect.width+20,resultRect.right-boxRect.left+8));
   br.style.width=`${needed}px`;
 
-  // The lower tuplet bracket runs at the bottom edge of the unit notehead.
   const unitBottom=point(unit,br,'bottom');
-  br.style.setProperty('--line-y',`${Math.max(12,unitBottom?unitBottom.y:20)}px`);
+  br.style.setProperty('--line-y',`${Math.max(12,unitBottom?unitBottom.y+1:24)}px`);
 }
 function moduleHeadOffset(m,which){
   const seqObj=which==='out'?m._out:m._in;
@@ -548,7 +581,7 @@ inp.onkeydown=e=>{if(e.key==='Enter')$('apply').click()};
 addEventListener('resize',()=>render(),{passive:true});
 
 reset(2n);
-document.fonts?.ready.then(render);
+document.fonts?.ready.then(()=>{glyphMetricCache.clear();render()});
 </script>
 </body>
 </html>
