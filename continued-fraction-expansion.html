@@ -266,35 +266,55 @@ function noteBody(power,unit=false){
   if(power>=1){
     const flagCount=Math.max(0,power-2);
     const extraFlags=Math.max(0,flagCount-2);
-    // A down-stem starts at the visual left edge of the notehead, not at a guessed box coordinate.
+    // Keep the stem attached to the visual left edge of the notehead.
     const stemX=Math.round(box.left+1);
     const stemStart=Math.round((box.top+box.bottom)/2);
-    const stemHeight=(unit?25:28)+Math.max(0,flagCount-1)*7;
-    body.style.height=`${Math.max(parseFloat(body.style.height),stemStart+stemHeight+3)}px`;
     const stem=el('span','stem-down');
     stem.style.left=`${stemX}px`;
     stem.style.top=`${stemStart}px`;
-    stem.style.height=`${stemHeight}px`;
     body.append(stem);
 
-    const flagLeft=stemX-1;
+    // The flag sits just to the right of the stem. Track the lowest flag ink so
+    // the stem stops at the flag instead of extending a fixed distance below it.
+    const flagLeft=stemX;
+    let lowestFlagBottom=null;
+    const rememberFlagBottom=(codepoint,top)=>{
+      const fb=glyphInkBox(codepoint,fs);
+      const bottom=top+fb.bottom;
+      lowestFlagBottom=lowestFlagBottom===null?bottom:Math.max(lowestFlagBottom,bottom);
+    };
+
     if(flagCount===1){
+      const flagTop=unit?26:29;
       const flag=el('span','smufl flag-down',ch(S.flag8d));
       flag.style.left=`${flagLeft}px`;
-      flag.style.top=`${unit?26:29}px`;
+      flag.style.top=`${flagTop}px`;
       body.append(flag);
+      rememberFlagBottom(S.flag8d,flagTop);
     }else if(flagCount>=2){
+      const baseTop=unit?24:27;
       const base=el('span','smufl flag-down',ch(S.flag16d));
       base.style.left=`${flagLeft}px`;
-      base.style.top=`${unit?24:27}px`;
+      base.style.top=`${baseTop}px`;
       body.append(base);
+      rememberFlagBottom(S.flag16d,baseTop);
       for(let i=0;i<extraFlags;i++){
+        const flagTop=(unit?30:33)+i*7;
         const flag=el('span','smufl flag-down',ch(S.flagInternalD));
         flag.style.left=`${flagLeft}px`;
-        flag.style.top=`${(unit?30:33)+i*7}px`;
+        flag.style.top=`${flagTop}px`;
         body.append(flag);
+        rememberFlagBottom(S.flagInternalD,flagTop);
       }
     }
+
+    const defaultStemBottom=stemStart+(unit?25:28);
+    const stemBottom=lowestFlagBottom===null
+      ? defaultStemBottom
+      : Math.max(stemStart+10,Math.ceil(lowestFlagBottom-1));
+    const stemHeight=Math.max(1,stemBottom-stemStart);
+    stem.style.height=`${stemHeight}px`;
+    body.style.height=`${Math.max(parseFloat(body.style.height),Math.ceil(Math.max(stemBottom,lowestFlagBottom??stemBottom)+3))}px`;
   }
   return body;
 }
