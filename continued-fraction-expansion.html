@@ -15,45 +15,37 @@
 
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; background: #fff; color: #111; overflow: auto; }
-    body { font-family: "Times New Roman", serif; }
+    body { font-family: "Times New Roman", serif; padding: 16px 20px 24px; }
 
-    .controls {
-      position: fixed;
-      top: 14px;
-      left: 14px;
-      z-index: 30;
-      width: min(620px, calc(100vw - 28px));
-      padding: 10px 12px;
-      border: 1.5px solid #111;
-      background: rgba(255, 255, 255, 0.95);
-    }
+    h1, h2 { font-weight: normal; margin: 0 0 10px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 18px; margin-top: 18px; }
+    p, li { line-height: 1.45; }
+    ul { margin: 6px 0 12px 1.4em; padding: 0; }
+    .controls { margin-bottom: 10px; }
     .control-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .radical-label { display: inline-flex; align-items: center; gap: 4px; font-size: 24px; }
-    button, input {
-      height: 36px;
-      border: 1.5px solid #111;
-      background: #fff;
-      color: #111;
-      font: inherit;
-    }
-    input { width: 110px; padding: 0 8px; font-size: 18px; }
-    button { padding: 0 12px; cursor: pointer; font-size: 17px; }
-    .error-message { min-height: 18px; margin-top: 5px; font: 12px/1.3 sans-serif; color: #8b0000; }
+    .radical-label { display: inline-flex; align-items: center; gap: 4px; font-size: 22px; }
+    input { width: 90px; font: inherit; }
+    button { font: inherit; }
+    .error-message { min-height: 1.3em; margin-top: 4px; font: 12px/1.3 sans-serif; color: #8b0000; }
     .stats-readout { margin-top: 6px; font: 12px/1.45 "Courier New", monospace; }
     .stats-row + .stats-row { margin-top: 2px; }
     .stats-label { display: inline-block; min-width: 58px; font-family: "Times New Roman", serif; }
+    .explanation { max-width: 980px; margin-bottom: 8px; }
+    .math-inline { font-family: "Times New Roman", serif; }
 
     #score {
       position: relative;
-      min-width: 100vw;
-      min-height: 100vh;
+      min-width: 100%;
+      min-height: 420px;
       background: #fff;
+      margin-top: 8px;
     }
 
     .module {
       position: absolute;
       width: max-content;
-      min-width: 205px;
+      min-width: 0;
       height: 118px;
       white-space: nowrap;
     }
@@ -62,9 +54,9 @@
       display: inline-flex;
       justify-content: center;
       align-items: flex-start;
-      min-width: 205px;
+      min-width: 0;
       height: 48px;
-      padding: 0 15px;
+      padding: 0 10px;
     }
     .tuplet-bracket::before {
       content: "";
@@ -100,20 +92,20 @@
     .unit-note { font-size: 40px; line-height: 1; margin-left: 1px; }
     .input-span {
       display: inline-flex;
-      align-items: baseline;
+      align-items: flex-end;
       gap: 5px;
       min-height: 40px;
     }
     .duration-sequence {
       display: inline-flex;
-      align-items: baseline;
+      align-items: flex-end;
       gap: 7px;
       position: relative;
     }
     .note-token {
       position: relative;
       display: inline-flex;
-      align-items: baseline;
+      align-items: flex-end;
       min-width: 25px;
       min-height: 42px;
       font-size: 45px;
@@ -128,12 +120,6 @@
       font-size: 24px;
       line-height: 1;
     }
-    .times-sign {
-      display: inline-block;
-      align-self: center;
-      margin-right: 1px;
-      font: 20px/1 "Times New Roman", serif;
-    }
     .note-char { display: inline-block; }
     .dot-char { display: inline-block; margin-left: -0.12em; }
 
@@ -146,7 +132,7 @@
     }
     .result-sequence {
       display: inline-flex;
-      align-items: baseline;
+      align-items: flex-end;
       gap: 10px;
       min-height: 50px;
     }
@@ -161,7 +147,7 @@
     .root-row {
       position: absolute;
       display: inline-flex;
-      align-items: baseline;
+      align-items: flex-end;
       gap: 10px;
       min-height: 52px;
     }
@@ -181,32 +167,17 @@
       vector-effect: non-scaling-stroke;
       stroke-linecap: round;
     }
-
-    .legend {
-      position: fixed;
-      right: 14px;
-      top: 14px;
-      z-index: 25;
-      max-width: min(380px, calc(100vw - 28px));
-      padding: 8px 10px;
-      border: 1px solid #aaa;
-      background: rgba(255,255,255,.93);
-      font: 12px/1.35 sans-serif;
-    }
-    .legend .smufl { font-size: 24px; vertical-align: middle; }
-
-    @media (max-width: 900px) {
-      .legend { display: none; }
-    }
   </style>
 </head>
 <body>
+  <h1>連分数によるイレーショナル・リズム記譜</h1>
+
   <div class="controls">
     <div class="control-row">
       <label class="radical-label">√<input id="radicand-input" type="text" inputmode="numeric" value="2" aria-label="Radicand"></label>
-      <button id="apply-radicand" type="button">apply</button>
-      <button id="add-depth-button" type="button">adding nest</button>
-      <button id="remove-depth-button" type="button">remove nest</button>
+      <button id="apply-radicand" type="button">適用</button>
+      <button id="add-depth-button" type="button">ネストを追加</button>
+      <button id="remove-depth-button" type="button">ネストを減らす</button>
     </div>
     <div class="error-message" id="error-message"></div>
     <div class="stats-readout">
@@ -217,23 +188,61 @@
     </div>
   </div>
 
-  <div class="legend">
-    The score uses Bravura Text (SMuFL). Tuplet numbers/colon and all note glyphs are font glyphs; brackets and ties are geometric notation primitives.
-  </div>
+  <section class="explanation">
+    <h2>このページでやっていること</h2>
+    <ul>
+      <li>√N を単純連分数に展開し、ネストを1段ずつ深くしながら有限近似を表示します。</li>
+      <li>連分数の整数部分 <span class="math-inline">a₀</span> は一番左の音価として置き、その右上から左下へ続くモジュール群が連分数の小数部分を担当します。</li>
+      <li>各モジュールには、その段で得られる有理数 <span class="math-inline">p/q</span> があります。モジュールに入ってくる長さは <span class="math-inline">q/p</span> で、それに <span class="math-inline">(p/q)²</span> を掛けると、出力はちょうど <span class="math-inline">p/q</span> になります。</li>
+      <li>この「入力長 × (p/q)² = p/q」という関係を、連符の分割比として楽譜化しています。</li>
+      <li>連符ブラケット左側の数は <span class="math-inline">q²</span> です。つまり入力長を <span class="math-inline">q²</span> 個の同じ最小音価に分割したものとして扱います。</li>
+      <li>そのうち結果として必要なのは <span class="math-inline">p²</span> 個分なので、モジュール下段の音符列は「最小単位を p² 個ぶん積み上げた長さ」を通常音符へ分解して表示しています。</li>
+      <li>右側の入力長は、その段の連分数整数項と、直前のネストで得た結果の和です。直前の結果はタイで次段へ受け渡されます。</li>
+    </ul>
+
+    <h2>描画方法</h2>
+    <ul>
+      <li>音符、符幹、旗、付点、連符数字、連符のコロンは SMuFL 準拠の Bravura Text フォントを使っています。CSSで音符の形を自作するのではなく、音楽フォントの文字グリフをそのまま表示しています。</li>
+      <li>連符ブラケットとタイは長さが周囲の配置によって変わるため、固定グリフではなく線と Bézier 曲線で描画しています。</li>
+      <li>連符の最小単位には、全音符、二分音符、四分音符、八分音符、16分音符、32分音符……という2進系の音価から、表示が極端に長くならないものを自動選択します。</li>
+      <li>結果側の <span class="math-inline">p²</span> 個分は、通常音価と付点音価の和へ厳密に分解します。たとえば25単位なら 24 + 1 とみなし、「付点付きの長い音符 + 最小単位の音符」をタイで結びます。</li>
+      <li>分解は、大きく書ける音価から順に使う貪欲法です。そのため、同じ長さならなるべく少ない音符数で表示されます。</li>
+      <li>非常に大きな同一音価の繰り返しは、音符を何十個も並べず「個数 + 音符グリフ」として圧縮表示します。以前の「81×」のような掛け算記号は使わず、個数だけを音符の前に置きます。</li>
+      <li>ネスト間のタイを描く前に、接続される2つの音符の垂直位置を揃えます。これにより、段をまたぐタイの始点と終点が同じ高さになり、斜めのタイにならないようにしています。</li>
+      <li>横方向の幅は内容から計算します。各モジュールやブラケットに固定の広い最小幅を持たせず、実際に必要な音符・数字・余白ぶんだけ確保します。</li>
+    </ul>
+
+    <h2>数式上の仕組み</h2>
+    <ul>
+      <li>ある段の連分数の値を <span class="math-inline">r = p/q</span> とすると、その段への入力は <span class="math-inline">1/r = q/p</span> です。</li>
+      <li>入力長を <span class="math-inline">q²</span> 分割すると、1単位は <span class="math-inline">(q/p) / q² = 1/(pq)</span> になります。</li>
+      <li>その最小単位を <span class="math-inline">p²</span> 個取ると、<span class="math-inline">p²/(pq) = p/q</span> となり、その段の出力長が得られます。</li>
+      <li>つまりブラケットの <span class="math-inline">q²</span> と、結果側の <span class="math-inline">p²</span> は別々の飾りではなく、同じ変換を「総分割数」と「取り出す単位数」の両側から表しています。</li>
+      <li>この仕組みにより、最終的な比率を近い音符へ丸める必要がなく、各有限連分数近似を有理数として厳密に記譜できます。</li>
+    </ul>
+
+    <h2>一般化</h2>
+    <ul>
+      <li>入力欄に2以上の非平方整数 N を入れると、同じ処理を √N に適用します。√2専用ではありません。</li>
+      <li>連分数と分数計算には BigInt を使っているため、分子・分母が大きくなっても JavaScript の通常の整数精度に丸められません。</li>
+      <li>画面上の小数値は収束確認用です。楽譜構造そのものは小数ではなく、整数と有理数から生成しています。</li>
+      <li>完全平方数は平方根が有理数になり、無限連分数ネストを必要としないため対象外にしています。</li>
+    </ul>
+  </section>
 
   <div id="score" role="img" aria-label="Nested continued-fraction tuplet notation"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/decimal.js@10.4.3/decimal.min.js"></script>
   <script>
     const config = {
-      scoreTopPx: 178,
+      scoreTopPx: 12,
       leftPaddingPx: 34,
       rightPaddingPx: 80,
       bottomPaddingPx: 70,
-      rootReservePx: 170,
-      stepYPx: 62,
-      minStepXPx: 245,
-      gapXPx: 58,
+      rootReservePx: 36,
+      stepYPx: 56,
+      minStepXPx: 118,
+      gapXPx: 22,
       maxMetronomePower: 10,
       maxDots: 3,
       compactBreveThreshold: 5n,
@@ -517,8 +526,7 @@
           const prefix = tupletDigits(piece.count);
           prefix.classList.add('count-prefix');
           token.insertBefore(prefix, token.firstChild);
-          const times = createElement('span', 'times-sign', '×');
-          token.insertBefore(times, token.querySelector('.note-char'));
+
         }
         sequence.appendChild(token);
         anchors.push(token);
@@ -528,7 +536,8 @@
     }
 
     function createIntegerSpan(integerTerm) {
-      return createDurationSequenceFromTicks(integerTerm, 0, 'input-duration');
+      const ticks = integerTerm;
+      return createDurationSequenceFromTicks(ticks, 0, 'input-duration');
     }
 
     function createTupletLabel(module) {
@@ -554,7 +563,8 @@
     }
 
     function createResultSequence(module) {
-      const sequence = createDurationSequenceFromTicks(module.pSquared, module.unitPower, 'result-sequence');
+      const totalTicks = module.pSquared;
+      const sequence = createDurationSequenceFromTicks(totalTicks, module.unitPower, 'result-sequence');
       sequence.title = `${module.pSquared.toString()} written unit(s) => actual duration ${formatFraction(module.value)}`;
       module._resultSequence = sequence;
       return sequence;
@@ -577,7 +587,8 @@
 
       const resultRow = createElement('div', 'result-row');
       resultRow.appendChild(createResultSequence(module));
-      resultRow.appendChild(createElement('div', 'result-caption', formatFraction(module.value)));
+      const caption = createElement('div', 'result-caption', formatFraction(module.value));
+      resultRow.appendChild(caption);
       box.appendChild(resultRow);
 
       module._element = box;
@@ -612,6 +623,7 @@
         right: rect.right - scoreRect.left,
         top: rect.top - scoreRect.top,
         bottom: rect.bottom - scoreRect.top,
+        centerY: (rect.top + rect.bottom) / 2 - scoreRect.top,
       };
     }
 
@@ -621,17 +633,20 @@
       const to = rectRelativeToScore(toElement);
       let x1 = options.fromSide === 'left' ? from.left + 4 : from.right - 4;
       let x2 = options.toSide === 'right' ? to.right - 4 : to.left + 4;
-      const y1 = from.bottom - 8;
-      const y2 = to.bottom - 8;
+      const fromY = from.bottom - 8;
+      const toY = to.bottom - 8;
+      const y = options.forceHorizontal ? (fromY + toY) / 2 : Math.max(fromY, toY);
 
-      if (x2 < x1 && options.allowReverse !== false) [x1, x2] = [x2, x1];
+      if (x2 < x1 && options.allowReverse !== false) {
+        [x1, x2] = [x2, x1];
+      }
       if (Math.abs(x2 - x1) < 10) return;
 
       const midX = (x1 + x2) / 2;
-      const baseY = Math.max(y1, y2) + (options.lift || 8);
+      const baseY = y + (options.lift || 8);
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('class', 'tie-path');
-      path.setAttribute('d', `M ${x1} ${y1} C ${midX - 12} ${baseY}, ${midX + 12} ${baseY}, ${x2} ${y2}`);
+      path.setAttribute('d', `M ${x1} ${y} C ${midX - 12} ${baseY}, ${midX + 12} ${baseY}, ${x2} ${y}`);
       state.tieLayer.appendChild(path);
     }
 
@@ -641,43 +656,69 @@
 
     function drawInternalTies(sequence) {
       const anchors = sequenceAnchors(sequence);
-      for (let i = 0; i < anchors.length - 1; i += 1) drawTie(anchors[i], anchors[i + 1], { lift: 7 });
+      for (let i = 0; i < anchors.length - 1; i += 1) {
+        drawTie(anchors[i], anchors[i + 1], { lift: 7 });
+      }
+    }
+
+    function alignModuleInputToChildResult(outerModule, childModule) {
+      const inputAnchors = sequenceAnchors(outerModule._inputSequence);
+      const resultAnchors = sequenceAnchors(childModule._resultSequence);
+      if (!inputAnchors.length || !resultAnchors.length) return 0;
+      const inputRect = rectRelativeToScore(inputAnchors[inputAnchors.length - 1]);
+      const resultRect = rectRelativeToScore(resultAnchors[0]);
+      return resultRect.centerY - inputRect.centerY;
+    }
+
+    function alignRootToOuterResult() {
+      const rootAnchors = sequenceAnchors(state._rootSequence);
+      const outerResultAnchors = sequenceAnchors(state.modules[state.modules.length - 1]._resultSequence);
+      if (!rootAnchors.length || !outerResultAnchors.length) return 0;
+      const rootRect = rectRelativeToScore(rootAnchors[rootAnchors.length - 1]);
+      const outerRect = rectRelativeToScore(outerResultAnchors[0]);
+      return outerRect.centerY - rootRect.centerY;
     }
 
     function layoutScore() {
       const modules = state.modules;
-      const widths = modules.map(module => Math.max(205, module._element.getBoundingClientRect().width));
+      const rootWidth = state.rootRow.getBoundingClientRect().width;
+      const widths = modules.map(module => module._element.getBoundingClientRect().width);
       const positions = new Array(modules.length);
-      let x = config.leftPaddingPx + config.rootReservePx;
+      let x = config.leftPaddingPx + rootWidth + config.rootReservePx;
 
       for (let i = modules.length - 1; i >= 0; i -= 1) {
-        positions[i] = { left: x, top: config.scoreTopPx + i * config.stepYPx };
+        positions[i] = {
+          left: x,
+          top: config.scoreTopPx + i * config.stepYPx,
+        };
         x += Math.max(config.minStepXPx, widths[i] + config.gapXPx);
       }
 
       for (let i = 0; i < modules.length; i += 1) {
-        modules[i]._element.style.left = `${positions[i].left}px`;
+        const el = modules[i]._element;
+        el.style.left = `${positions[i].left}px`;
+        el.style.top = `${positions[i].top}px`;
+      }
+
+      for (let i = 1; i < modules.length; i += 1) {
+        const delta = alignModuleInputToChildResult(modules[i], modules[i - 1]);
+        positions[i].top += delta;
         modules[i]._element.style.top = `${positions[i].top}px`;
       }
 
-      const outer = modules[modules.length - 1];
-      const outerPosition = positions[modules.length - 1];
       state.rootRow.style.left = `${config.leftPaddingPx}px`;
-      state.rootRow.style.top = `${outerPosition.top + 49}px`;
-
-      const rootWidth = state.rootRow.getBoundingClientRect().width;
-      if (rootWidth + config.leftPaddingPx + 35 > outerPosition.left + 18) {
-        const shift = rootWidth + config.leftPaddingPx + 55 - (outerPosition.left + 18);
-        positions.forEach(position => { position.left += shift; });
-        for (let i = 0; i < modules.length; i += 1) modules[i]._element.style.left = `${positions[i].left}px`;
-      }
+      state.rootRow.style.top = `${positions[modules.length - 1].top + 44}px`;
+      const rootDelta = alignRootToOuterResult();
+      state.rootRow.style.top = `${positions[modules.length - 1].top + 44 + rootDelta}px`;
 
       const rightmost = Math.max(...modules.map((module, i) => positions[i].left + widths[i]));
-      const bottom = Math.max(window.innerHeight, outerPosition.top + 150 + config.bottomPaddingPx);
+      const lowestModuleBottom = Math.max(...modules.map((module, i) => positions[i].top + module._element.getBoundingClientRect().height));
+      const rootBottom = parseFloat(state.rootRow.style.top) + state.rootRow.getBoundingClientRect().height;
+      const bottom = Math.max(window.innerHeight, Math.max(lowestModuleBottom, rootBottom) + config.bottomPaddingPx);
       const width = Math.max(window.innerWidth, rightmost + config.rightPaddingPx);
       score.style.width = `${width}px`;
       score.style.height = `${bottom}px`;
-      return { width, height: bottom };
+      return { width, height: bottom, positions };
     }
 
     function renderTies(layout) {
@@ -695,14 +736,14 @@
         const inputAnchors = sequenceAnchors(outer._inputSequence);
         const resultAnchors = sequenceAnchors(child._resultSequence);
         if (inputAnchors.length && resultAnchors.length) {
-          drawTie(inputAnchors[inputAnchors.length - 1], resultAnchors[0], { lift: 10 });
+          drawTie(inputAnchors[inputAnchors.length - 1], resultAnchors[0], { lift: 10, forceHorizontal: true });
         }
       }
 
       const rootAnchors = sequenceAnchors(state._rootSequence);
       const outerResultAnchors = sequenceAnchors(state.modules[state.modules.length - 1]._resultSequence);
       if (rootAnchors.length && outerResultAnchors.length) {
-        drawTie(rootAnchors[rootAnchors.length - 1], outerResultAnchors[0], { lift: 10 });
+        drawTie(rootAnchors[rootAnchors.length - 1], outerResultAnchors[0], { lift: 10, forceHorizontal: true });
       }
     }
 
@@ -791,7 +832,9 @@
     }, { passive: true });
 
     resetForRadicand(2n);
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => renderScore());
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => renderScore());
+    }
   </script>
 </body>
 </html>
