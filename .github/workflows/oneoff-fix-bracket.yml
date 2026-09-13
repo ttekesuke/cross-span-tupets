@@ -1,0 +1,77 @@
+name: One-off bracket layout fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-fix-bracket.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Patch bracket layout
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('continued-fraction-expansion.html')
+          text = p.read_text(encoding='utf-8')
+
+          old = '  justify-content:center;\n'
+          if old not in text:
+              raise SystemExit('justify-content:center target not found')
+          text = text.replace(old, '  justify-content:flex-start;\n', 1)
+
+          pattern = re.compile(r"function extendBracketSpans\(mods,ref=score\)\{[\s\S]*?\n\}\n\nfunction moduleHeadOffset", re.M)
+          replacement = '''function extendBracketSpans(mods,ref=score){
+            const naturalRight=Math.max(...mods.map(m=>m._el.getBoundingClientRect().right));
+            for(const m of mods){
+              const br=m._el.querySelector('.bracket');
+              const brRect=br.getBoundingClientRect();
+              const currentWidth=brRect.width;
+              const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - brRect.left + 6));
+              br.style.width=`${targetWidth}px`;
+            }
+          }
+
+          function moduleHeadOffset'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'extendBracketSpans replacement count: {count}')
+
+          p.write_text(text, encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path('continued-fraction-expansion.html').read_text(encoding='utf-8')
+          m = re.search(r'<script>\n([\s\S]*)</script>\n</body>', text)
+          if not m:
+              raise SystemExit('script block not found')
+          Path('/tmp/check.js').write_text(m.group(1), encoding='utf-8')
+          PY
+          node --check /tmp/check.js
+
+      - name: Commit and push
+        shell: bash
+        run: |
+          git config user.name 'ttekesuke'
+          git config user.email 'actions@users.noreply.github.com'
+          git add continued-fraction-expansion.html
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+            exit 0
+          fi
+          git commit -m 'Anchor bracket content to left while extending right edge'
+          git push origin HEAD:main
