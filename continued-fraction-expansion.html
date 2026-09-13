@@ -35,9 +35,9 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
 .module{position:absolute;width:max-content;min-width:0;white-space:nowrap}
 .result{position:relative;width:max-content;padding-left:18px;padding-bottom:6px}
 .seq{display:inline-flex;align-items:flex-start;gap:10px;position:relative}
-.input{display:inline-flex;align-items:flex-start;gap:5px;position:relative}
+.input{display:inline-flex;align-items:flex-start;gap:12px;position:relative}
 .token{position:relative;display:inline-flex;align-items:flex-start;min-width:25px;font-size:45px;line-height:1;overflow:visible}
-.token.unit{font-size:40px;min-width:22px;margin-left:1px}
+.token.unit{font-size:40px;min-width:22px;margin-left:6px}
 .count{align-self:flex-start;margin-right:2px;font-family:BravuraText,sans-serif;font-size:31px;line-height:.8;transform:translateY(4px)}
 .smufl{font-family:BravuraText,sans-serif}
 .note-body{position:relative;display:inline-block;flex:0 0 auto;overflow:visible;width:30px;height:32px}
@@ -76,7 +76,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
   z-index:2;
   display:inline-flex;
   align-items:flex-start;
-  gap:5px;
+  gap:9px;
   padding:0 7px;
   background:#fff;
 }
@@ -84,7 +84,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
 .digits{letter-spacing:-.04em}
 
 .root{position:absolute;display:inline-flex;align-items:flex-start;gap:10px}
-.ties{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:10}
+.ties{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:200}
 .tie{fill:none;stroke:#111;stroke-width:1.8;vector-effect:non-scaling-stroke;stroke-linecap:round}
 </style>
 </head>
@@ -464,12 +464,29 @@ function syncGeom(m){
   br.style.setProperty('--line-y',`${Math.max(12,unitBottom?unitBottom.y+1:24)}px`);
 }
 function extendBracketSpans(mods,ref=score){
+  for(const m of mods){
+    const br=m._el.querySelector('.bracket');
+    br.style.marginLeft='0px';
+  }
+
+  for(let i=0;i<mods.length-1;i++){
+    const child=mods[i], parent=mods[i+1];
+    const br=child._el.querySelector('.bracket');
+    const parentInputAnchors=anchors(parent._in);
+    const childInputNote=parentInputAnchors.at(-1);
+    if(!br || !childInputNote) continue;
+    const childBox=child._el.getBoundingClientRect();
+    const noteRect=childInputNote.getBoundingClientRect();
+    const offset=Math.max(0, Math.round(noteRect.left - childBox.left));
+    br.style.marginLeft=`${offset}px`;
+  }
+
   const naturalRight=Math.max(...mods.map(m=>m._el.getBoundingClientRect().right));
   for(const m of mods){
     const br=m._el.querySelector('.bracket');
-    const boxRect=m._el.getBoundingClientRect();
-    const currentWidth=br.getBoundingClientRect().width;
-    const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - boxRect.left + 6));
+    const brRect=br.getBoundingClientRect();
+    const currentWidth=brRect.width;
+    const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - brRect.left + 6));
     br.style.width=`${targetWidth}px`;
   }
 }
