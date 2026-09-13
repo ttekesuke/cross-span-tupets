@@ -521,6 +521,11 @@ function layout(mods,root,ref=score,demoMode=false){
     prev=child;
   }
 
+  for(let i=0;i<mods.length;i++){
+    mods[i]._el.style.zIndex=String(20 + (mods.length - i));
+  }
+  root.style.zIndex=String(30 + mods.length);
+
   extendBracketSpans(mods,ref);
 
   const right=Math.max(
