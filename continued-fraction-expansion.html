@@ -469,15 +469,14 @@ function extendBracketSpans(mods,ref=score){
     br.style.marginLeft='0px';
   }
 
-  for(let i=0;i<mods.length-1;i++){
-    const child=mods[i], parent=mods[i+1];
-    const br=child._el.querySelector('.bracket');
-    const parentInputAnchors=anchors(parent._in);
-    const childInputNote=parentInputAnchors.at(-1);
-    if(!br || !childInputNote) continue;
-    const childBox=child._el.getBoundingClientRect();
-    const noteRect=childInputNote.getBoundingClientRect();
-    const offset=Math.max(0, Math.round(noteRect.left - childBox.left));
+  for(const m of mods){
+    const br=m._el.querySelector('.bracket');
+    const outAnchors=anchors(m._out);
+    const firstResultNote=outAnchors[0];
+    if(!br || !firstResultNote) continue;
+    const boxRect=m._el.getBoundingClientRect();
+    const noteRect=firstResultNote.getBoundingClientRect();
+    const offset=Math.max(0, Math.round(noteRect.left - boxRect.left));
     br.style.marginLeft=`${offset}px`;
   }
 
@@ -525,13 +524,21 @@ function layout(mods,root,ref=score,demoMode=false){
   outer._el.style.left=`${x}px`;
   outer._el.style.top=`${positions[outerIndex].t}px`;
 
+  const refRect=ref.getBoundingClientRect();
   let prev=outer;
   for(let i=outerIndex-1;i>=0;i--){
-    const prevRect=prev._el.getBoundingClientRect();
-    x=positions[i+1].l+prevRect.width+gap;
-    const targetY=positions[i+1].t+moduleHeadOffset(prev,'in');
+    const parentInputAnchors=anchors(prev._in);
+    const parentInputToken=parentInputAnchors.at(-1);
+    const parentInputRect=parentInputToken?.getBoundingClientRect();
     const child=mods[i];
     const childOutOffset=moduleHeadOffset(child,'out');
+    const childOutAnchors=anchors(child._out);
+    const childFirstRect=childOutAnchors.length?tokenRect(childOutAnchors[0], child._el):{l:0};
+    const desiredResultLeft=parentInputRect
+      ? Math.round(parentInputRect.right - refRect.left + gap)
+      : positions[i+1].l + prev._el.getBoundingClientRect().width + gap;
+    x=desiredResultLeft - childFirstRect.l;
+    const targetY=positions[i+1].t+moduleHeadOffset(prev,'in');
     positions[i]={l:x,t:targetY-childOutOffset};
     child._el.style.left=`${x}px`;
     child._el.style.top=`${positions[i].t}px`;
