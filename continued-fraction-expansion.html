@@ -53,7 +53,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
   --line-y:13px;
   position:relative;
   display:inline-flex;
-  justify-content:center;
+  justify-content:flex-start;
   align-items:flex-start;
   width:max-content;
   min-width:0;
@@ -486,16 +486,6 @@ function alignBracketStarts(mods){
 }
 
 function extendBracketSpans(mods,ref=score){
-  // The row contents are already in the required semantic order at this point:
-  // q², unit note, colon, integer note, tie, child result.  Record the label
-  // positions before widening the brackets so justify-content:center cannot
-  // re-center those labels and move them across their child result notes.
-  const labelLeftBefore=new Map();
-  for(const m of mods){
-    const label=m._el.querySelector('.bracket .label');
-    if(label) labelLeftBefore.set(m,label.getBoundingClientRect().left);
-  }
-
   const naturalRight=Math.max(...mods.map(m=>m._el.getBoundingClientRect().right));
   for(const m of mods){
     const br=m._el.querySelector('.bracket');
@@ -503,16 +493,6 @@ function extendBracketSpans(mods,ref=score){
     const currentWidth=brRect.width;
     const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - brRect.left + 6));
     br.style.width=`${targetWidth}px`;
-  }
-
-  // Widening a flex bracket would normally move its centered label.  Undo only
-  // that centering movement; the bracket itself still reaches the common right edge.
-  for(const m of mods){
-    const label=m._el.querySelector('.bracket .label');
-    const before=labelLeftBefore.get(m);
-    if(!label || before===undefined) continue;
-    const after=label.getBoundingClientRect().left;
-    label.style.transform=`translateX(${Math.round(before-after)}px)`;
   }
 }
 
