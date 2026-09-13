@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Image → Glissando</title>
+<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vexflow@4.2.2/build/cjs/vexflow.js"></script>
+<style>
+body{font-family:sans-serif}.layout{display:flex;align-items:flex-start;gap:16px}.left-pane{width:340px;flex:0 0 340px}.right-pane{flex:1 1 auto;min-width:0}.preview-stack{position:relative;width:320px}.preview-stack canvas{display:block;width:100%}.preview-stack .overlay{position:absolute;inset:0;pointer-events:none}#binary-preview{display:block;width:320px}#score-viewport{position:relative;overflow:hidden}label{display:block;margin:6px 0}input[type=range]{width:200px}.compact{margin:6px 0}
+</style>
+</head>
+<body>
+<div id="app">
+<h1>Image → Glissando</h1>
+<div class="layout">
+<div class="left-pane">
+<p><label>入力: <select v-model="inputMode" @change="handleInputModeChange"><option value="image">Image</option><option value="geometry">Geometry</option></select></label></p>
+
+<template v-if="inputMode === 'image'">
+<p><input type="file" ref="fileInput" accept="image/*" @change="handleFileSelect"></p>
+<div @dragover.prevent @drop.prevent="handleDrop">または画像をここにドロップ</div>
+<template v-if="sourceImage">
+<p><label>抽出方式: <select v-model="extractionMode" @change="scheduleExtractionPreview"><option value="edge">Edge</option><option value="silhouette">Silhouette</option></select></label></p>
+<template v-if="extractionMode === 'edge'">
+<label>Edge threshold: {{ edgeThreshold }} <input type="range" min="1" max="255" step="1" v-model="edgeThreshold" @input="scheduleExtractionPreview"></label>
+<label>Blur: {{ blurRadius }} <input type="range" min="0" max="4" step="1" v-model="blurRadius" @input="scheduleExtractionPreview"></label>
+<label>Min line length: {{ minTraceLength }} px <input type="range" min="2" max="120" step="1" v-model="minTraceLength" @input="scheduleExtractionPreview"></label>
+<label>Simplify: {{ simplifyTolerance }} px <input type="range" min="0" max="8" step="0.5" v-model="simplifyTolerance" @input="scheduleExtractionPreview"></label>
+</template>
+<template v-else><label>Binary threshold: {{ threshold }} <input type="range" min="0" max="255" step="1" v-model="threshold" @input="scheduleExtractionPreview"></label><div>Otsu: {{ autoThreshold }}</div></template>
+</template>
+</template>
+
+<template v-else>
+<label>Grid columns (quarter-note cells): <input type="number" min="4" max="640" v-model="geometryGridCols" @input="scheduleGeometryPreview"></label>
+<label>Grid rows (pitch cells): <input type="number" min="8" max="640" v-model="geometryGridRows" @input="scheduleGeometryPreview"></label>
+<label>Pattern: <select v-model="geometryPattern" @change="scheduleGeometryPreview"><option v-for="p in geometryPatterns" :key="p.id" :value="p.id">{{ p.label }}</option></select></label>
+<label>Complexity: {{ geometryComplexity }} <input type="range" min="1" max="10" step="1" v-model="geometryComplexity" @input="scheduleGeometryPreview"></label>
+<label>Scale: {{ geometryScale }}% <input type="range" min="20" max="140" step="1" v-model="geometryScale" @input="scheduleGeometryPreview"></label>
+<label>Rotation: {{ geometryRotation }}° <input type="range" min="-180" max="180" step="1" v-model="geometryRotation" @input="scheduleGeometryPreview"></label>
+<label>Offset X: {{ geometryOffsetX }}% <input type="range" min="-45" max="45" step="1" v-model="geometryOffsetX" @input="scheduleGeometryPreview"></label>
+<label>Offset Y: {{ geometryOffsetY }}% <input type="range" min="-45" max="45" step="1" v-model="geometryOffsetY" @input="scheduleGeometryPreview"></label>
+<label>{{ geometryParamALabel }}: {{ geometryParamA }} <input type="range" min="0" max="100" step="1" v-model="geometryParamA" @input="scheduleGeometryPreview"></label>
+<label>{{ geometryParamBLabel }}: {{ geometryParamB }} <input type="range" min="0" max="100" step="1" v-model="geometryParamB" @input="scheduleGeometryPreview"></label>
+<label>Seed: <input type="number" v-model="geometrySeed" @input="scheduleGeometryPreview"></label>
+</template>
+
+<p><button @click="renderScore" :disabled="inputMode === 'image' && !sourceImage">楽譜化</button> <button @click="saveScoreAsPng" :disabled="!stats">PNG保存</button></p>
+
+<template v-if="(inputMode === 'image' && sourceImage) || inputMode === 'geometry'">
+<p>{{ inputMode === 'geometry' ? 'Generated geometry + score input lines' : '元画像 + 抽出線' }}</p>
+<div class="preview-stack"><canvas ref="originalCanvas"></canvas><canvas ref="segmentCanvas" class="overlay"></canvas></div>
+<template v-if="inputMode === 'image'"><p>{{ extractionMode === 'edge' ? 'Edge mask' : 'Binary mask' }}</p><canvas ref="edgeCanvas" id="binary-preview"></canvas></template>
+<canvas v-else ref="edgeCanvas" style="display:none"></canvas>
+</template>
+</div>
+<div class="right-pane">
+<p v-if="stats">解析線分: {{ stats.segments }} / 楽譜線分: {{ stats.scoreSegments }} / 声部: {{ stats.voices }} / 音符イベント: {{ stats.noteEvents }} / 接続線: {{ stats.stavelines }} / 小節: {{ stats.measures }} / 五線: {{ stats.staves }} / 解析: {{ stats.analysisCols }}×{{ stats.analysisRows }}</p>
+<div id="score-viewport" ref="scoreViewport"><div id="vexflow-container" ref="vexflowContainer"></div></div>
+</div>
+</div>
+</div>
+<script src="./extractor.js?v=8"></script>
+<script src="./geometry.js?v=8"></script>
+<script src="./score-convert.js?v=8"></script>
+<script src="./vertical-gliss-filter.js?v=8"></script>
+<script src="./score-render.js?v=8"></script>
+<script src="./score-render-grace.js?v=8"></script>
+<script src="./app.js?v=8"></script>
+</body>
+</html>
