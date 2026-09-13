@@ -1,4 +1,4 @@
-name: One-off bracket layout fix
+name: One-off right bracket segment fix
 
 on:
   push:
@@ -17,7 +17,8 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
-      - name: Patch bracket layout
+
+      - name: Patch bracket segments
         shell: bash
         run: |
           python - <<'PY'
@@ -27,27 +28,62 @@ jobs:
           p = Path('continued-fraction-expansion.html')
           text = p.read_text(encoding='utf-8')
 
-          old = '  justify-content:center;\n'
-          if old not in text:
-              raise SystemExit('justify-content:center target not found')
-          text = text.replace(old, '  justify-content:flex-start;\n', 1)
+          css_pattern = re.compile(r'''\.bracket:before\{\n  content:"";\n  position:absolute;\n  top:var\(--line-y\);\n  left:0;\n  right:0;\n  border-top:1\.7px solid #111;\n\}''')
+          css_replacement = '''.bracket:before,.bracket:after{
+            content:"";
+            position:absolute;
+            top:var(--line-y);
+            border-top:1.7px solid #111;
+          }
+          .bracket:before{left:0;width:var(--left-line-end,0px)}
+          .bracket:after{left:var(--right-line-start,100%);right:0}'''
+          text, count = css_pattern.subn(css_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'bracket CSS replacement count: {count}')
 
-          pattern = re.compile(r"function extendBracketSpans\(mods,ref=score\)\{[\s\S]*?\n\}\n\nfunction moduleHeadOffset", re.M)
-          replacement = '''function extendBracketSpans(mods,ref=score){
-            const naturalRight=Math.max(...mods.map(m=>m._el.getBoundingClientRect().right));
-            for(const m of mods){
-              const br=m._el.querySelector('.bracket');
+          marker = '''function moduleHeadOffset(m,which){'''
+          helper = '''function syncBracketSegments(mods){
+            const visualRight=token=>{
+              if(!token)return null;
+              const nodes=[token,...token.querySelectorAll('.notehead,.stem-down,.flag-down,.dot')];
+              return Math.max(...nodes.map(n=>n.getBoundingClientRect().right));
+            };
+
+            for(let i=0;i<mods.length;i++){
+              const m=mods[i],br=m._el.querySelector('.bracket'),label=br?.querySelector('.label');
+              if(!br||!label)continue;
               const brRect=br.getBoundingClientRect();
-              const currentWidth=brRect.width;
-              const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - brRect.left + 6));
-              br.style.width=`${targetWidth}px`;
+              const firstLabelItem=label.firstElementChild;
+              const leftEnd=firstLabelItem
+                ? Math.max(0,Math.floor(firstLabelItem.getBoundingClientRect().left-brRect.left-4))
+                : 8;
+
+              const inputAnchors=anchors(m._in);
+              let contentRight=visualRight(inputAnchors.at(-1));
+
+              if(i>0){
+                const child=mods[i-1];
+                const childRect=child._out?.getBoundingClientRect();
+                if(childRect)contentRight=Math.max(contentRight??childRect.right,childRect.right);
+              }
+
+              const rawRightStart=Math.ceil((contentRight??brRect.right)-brRect.left+5);
+              const rightStart=Math.max(leftEnd+1,Math.min(brRect.width-2,rawRightStart));
+              br.style.setProperty('--left-line-end',`${leftEnd}px`);
+              br.style.setProperty('--right-line-start',`${rightStart}px`);
             }
           }
 
-          function moduleHeadOffset'''
-          text, count = pattern.subn(replacement, text, count=1)
-          if count != 1:
-              raise SystemExit(f'extendBracketSpans replacement count: {count}')
+          function moduleHeadOffset(m,which){'''
+          if marker not in text:
+              raise SystemExit('moduleHeadOffset marker not found')
+          text = text.replace(marker, helper, 1)
+
+          old_call = '''  extendBracketSpans(mods,ref);\n\n  const right=Math.max('''
+          new_call = '''  extendBracketSpans(mods,ref);\n  syncBracketSegments(mods);\n\n  const right=Math.max('''
+          if old_call not in text:
+              raise SystemExit('extendBracketSpans call target not found')
+          text = text.replace(old_call, new_call, 1)
 
           p.write_text(text, encoding='utf-8')
           PY
@@ -69,9 +105,6 @@ jobs:
           git config user.name 'ttekesuke'
           git config user.email 'actions@users.noreply.github.com'
           git add continued-fraction-expansion.html
-          if git diff --cached --quiet; then
-            echo 'No changes to commit'
-            exit 0
-          fi
-          git commit -m 'Anchor bracket content to left while extending right edge'
+          git rm .github/workflows/oneoff-fix-bracket.yml
+          git commit -m 'Start right bracket line after tied child result'
           git push origin HEAD:main
