@@ -1,0 +1,78 @@
+name: One-off dot position fix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/oneoff-fix-dot-position.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Prepare one-off dot positioning fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Move augmentation dots closer to noteheads
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('continued-fraction-expansion.html')
+          text = p.read_text(encoding='utf-8')
+
+          old_css = '.dot{position:absolute;left:24px;top:6px;font-size:34px;line-height:1}'
+          new_css = '.dot{position:absolute;left:18px;top:1px;font-size:34px;line-height:1}'
+          if old_css not in text:
+              raise SystemExit('dot CSS target not found')
+          text = text.replace(old_css, new_css, 1)
+
+          old_js = """  for(let i=0;i<dots;i++){
+            const dot=el('span','smufl dot',ch(S.dot));
+            dot.style.top='5px';
+            dot.style.left=`${power<=0?28:25}px`;
+            t.append(dot);
+          }
+          """
+          new_js = """  for(let i=0;i<dots;i++){
+            const dot=el('span','smufl dot',ch(S.dot));
+            dot.style.top='1px';
+            const baseLeft=power<=0?20:18;
+            dot.style.left=`${baseLeft + i*6}px`;
+            t.append(dot);
+          }
+          """
+          if old_js not in text:
+              raise SystemExit('dot JS target not found')
+          text = text.replace(old_js, new_js, 1)
+
+          p.write_text(text, encoding='utf-8')
+          PY
+
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          text = Path('continued-fraction-expansion.html').read_text(encoding='utf-8')
+          m = re.search(r'<script>\n([\s\S]*)</script>\n</body>', text)
+          if not m:
+              raise SystemExit('script block not found')
+          Path('/tmp/check.js').write_text(m.group(1), encoding='utf-8')
+          PY
+          node --check /tmp/check.js
+
+      - name: Remove one-off workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/oneoff-fix-dot-position.yml
+          git config user.name 'ttekesuke'
+          git config user.email 'actions@users.noreply.github.com'
+          git add continued-fraction-expansion.html .github/workflows/oneoff-fix-dot-position.yml
+          git commit -m 'Move augmentation dots closer to noteheads'
+          git push origin HEAD:main
