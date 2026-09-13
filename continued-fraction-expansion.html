@@ -33,7 +33,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
 
 #score{position:relative;min-width:100%;min-height:420px;margin-top:8px}
 .module{position:absolute;width:max-content;min-width:0;white-space:nowrap}
-.result{position:relative;width:max-content;padding-left:18px;padding-bottom:6px}
+.result{position:relative;width:max-content;padding-left:18px;padding-bottom:18px}
 .seq{display:inline-flex;align-items:flex-start;gap:10px;position:relative}
 .input{display:inline-flex;align-items:flex-start;gap:12px;position:relative}
 .token{position:relative;display:inline-flex;align-items:flex-start;min-width:25px;font-size:45px;line-height:1;overflow:visible}
@@ -58,7 +58,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
   width:max-content;
   min-width:0;
   padding:0 10px 4px;
-  margin-top:1px;
+  margin-top:4px;
 }
 .bracket:before{
   content:"";
@@ -532,12 +532,10 @@ function layout(mods,root,ref=score,demoMode=false){
     const parentInputRect=parentInputToken?.getBoundingClientRect();
     const child=mods[i];
     const childOutOffset=moduleHeadOffset(child,'out');
-    const childOutAnchors=anchors(child._out);
-    const childFirstRect=childOutAnchors.length?tokenRect(childOutAnchors[0], child._el):{l:0};
-    const desiredResultLeft=parentInputRect
+    const desiredModuleLeft=parentInputRect
       ? Math.round(parentInputRect.right - refRect.left + gap)
       : positions[i+1].l + prev._el.getBoundingClientRect().width + gap;
-    x=desiredResultLeft - childFirstRect.l;
+    x=desiredModuleLeft;
     const targetY=positions[i+1].t+moduleHeadOffset(prev,'in');
     positions[i]={l:x,t:targetY-childOutOffset};
     child._el.style.left=`${x}px`;
