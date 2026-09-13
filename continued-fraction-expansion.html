@@ -463,6 +463,17 @@ function syncGeom(m){
   const unitBottom=point(unit,br,'bottom');
   br.style.setProperty('--line-y',`${Math.max(12,unitBottom?unitBottom.y+1:24)}px`);
 }
+function extendBracketSpans(mods,ref=score){
+  const naturalRight=Math.max(...mods.map(m=>m._el.getBoundingClientRect().right));
+  for(const m of mods){
+    const br=m._el.querySelector('.bracket');
+    const boxRect=m._el.getBoundingClientRect();
+    const currentWidth=br.getBoundingClientRect().width;
+    const targetWidth=Math.max(currentWidth, Math.ceil(naturalRight - boxRect.left + 6));
+    br.style.width=`${targetWidth}px`;
+  }
+}
+
 function moduleHeadOffset(m,which){
   const seqObj=which==='out'?m._out:m._in;
   const a=anchors(seqObj);
@@ -509,6 +520,8 @@ function layout(mods,root,ref=score,demoMode=false){
     child._el.style.top=`${positions[i].t}px`;
     prev=child;
   }
+
+  extendBracketSpans(mods,ref);
 
   const right=Math.max(
     left+rootRect.width,
