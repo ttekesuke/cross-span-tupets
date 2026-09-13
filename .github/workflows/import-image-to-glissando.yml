@@ -1,0 +1,37 @@
+name: Import image-to-glissando
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    if: github.event.head_commit.message == 'Run image-to-glissando import'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Copy source repository
+        run: |
+          rm -rf image-to-glissando
+          git clone --depth 1 https://github.com/ttekesuke/image-to-glissando.git /tmp/image-to-glissando
+          rm -rf /tmp/image-to-glissando/.git
+          mkdir -p image-to-glissando
+          cp -a /tmp/image-to-glissando/. image-to-glissando/
+
+      - name: Commit imported files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add image-to-glissando
+          if git diff --cached --quiet; then
+            echo "No changes to import"
+          else
+            git commit -m "Import image-to-glissando source"
+            git push
+          fi
