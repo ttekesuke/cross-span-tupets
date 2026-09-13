@@ -46,7 +46,7 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
 .stem-down{position:absolute;width:1.7px;background:#111}
 .flag-down{position:absolute;font-size:45px;line-height:1}
 .token.unit .flag-down{font-size:40px}
-.dot{position:absolute;left:24px;top:6px;font-size:34px;line-height:1}
+.dot{position:absolute;left:18px;top:1px;font-size:34px;line-height:1}
 .head-top-marker,.head-center-marker,.head-bottom-marker{position:absolute;width:1px;height:1px;pointer-events:none}
 
 .bracket{
@@ -336,8 +336,9 @@ function note(power,dots=0,cls=''){
   t.append(noteBody(power,unit));
   for(let i=0;i<dots;i++){
     const dot=el('span','smufl dot',ch(S.dot));
-    dot.style.top='5px';
-    dot.style.left=`${power<=0?28:25}px`;
+    dot.style.top='1px';
+    const baseLeft=power<=0?20:18;
+    dot.style.left=`${baseLeft + i*6}px`;
     t.append(dot);
   }
   return t;
