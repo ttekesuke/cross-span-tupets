@@ -60,14 +60,14 @@ dialog{max-width:min(1000px,calc(100vw - 40px));max-height:90vh;overflow:auto}
   padding:0 10px 4px;
   margin-top:4px;
 }
-.bracket:before{
+.bracket:before,.bracket:after{
   content:"";
   position:absolute;
   top:var(--line-y);
-  left:0;
-  right:0;
   border-top:1.7px solid #111;
 }
+.bracket:before{left:0;width:var(--left-line-end,0px)}
+.bracket:after{left:var(--right-line-start,100%);right:0}
 .hook{position:absolute;width:1.7px;height:12px;background:#111;top:calc(var(--line-y) - 12px)}
 .hook.l{left:0}
 .hook.r{right:0}
@@ -496,6 +496,38 @@ function extendBracketSpans(mods,ref=score){
   }
 }
 
+function syncBracketSegments(mods){
+  const visualRight=token=>{
+    if(!token)return null;
+    const nodes=[token,...token.querySelectorAll('.notehead,.stem-down,.flag-down,.dot')];
+    return Math.max(...nodes.map(n=>n.getBoundingClientRect().right));
+  };
+
+  for(let i=0;i<mods.length;i++){
+    const m=mods[i],br=m._el.querySelector('.bracket'),label=br?.querySelector('.label');
+    if(!br||!label)continue;
+    const brRect=br.getBoundingClientRect();
+    const firstLabelItem=label.firstElementChild;
+    const leftEnd=firstLabelItem
+      ? Math.max(0,Math.floor(firstLabelItem.getBoundingClientRect().left-brRect.left-4))
+      : 8;
+
+    const inputAnchors=anchors(m._in);
+    let contentRight=visualRight(inputAnchors.at(-1));
+
+    if(i>0){
+      const child=mods[i-1];
+      const childRect=child._out?.getBoundingClientRect();
+      if(childRect)contentRight=Math.max(contentRight??childRect.right,childRect.right);
+    }
+
+    const rawRightStart=Math.ceil((contentRight??brRect.right)-brRect.left+5);
+    const rightStart=Math.max(leftEnd+1,Math.min(brRect.width-2,rawRightStart));
+    br.style.setProperty('--left-line-end',`${leftEnd}px`);
+    br.style.setProperty('--right-line-start',`${rightStart}px`);
+  }
+}
+
 function moduleHeadOffset(m,which){
   const seqObj=which==='out'?m._out:m._in;
   const a=anchors(seqObj);
@@ -556,6 +588,7 @@ function layout(mods,root,ref=score,demoMode=false){
   root.style.zIndex=String(30 + mods.length);
 
   extendBracketSpans(mods,ref);
+  syncBracketSegments(mods);
 
   const right=Math.max(
     left+rootRect.width,
