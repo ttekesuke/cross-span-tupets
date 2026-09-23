@@ -39,8 +39,19 @@ type KuromojiNamespace = {
 
 const endpoint = self as unknown as WorkerEndpoint;
 const ALIGN_MODEL = "https://huggingface.co/mnaoizyyy/charsiu-js-models/resolve/main/japanese-hubert-base-phoneme-ctc/model_quantized.onnx";
-const KUROMOJI_DICT = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/";
-const KUROMOJI_SCRIPT = "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js";
+const KUROMOJI_DICT_SOURCES = [
+  "https://unpkg.com/kuromoji@0.1.2/dict/",
+  "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/",
+];
+const KUROMOJI_SCRIPT_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js",
+  "https://unpkg.com/kuromoji@0.1.2/build/kuromoji.js",
+];
+const KUROMOJI_DICT_FILES = [
+  "base.dat.gz", "cc.dat.gz", "check.dat.gz", "tid.dat.gz",
+  "tid_map.dat.gz", "tid_pos.dat.gz", "unk.dat.gz", "unk_char.dat.gz",
+  "unk_compat.dat.gz", "unk_invoke.dat.gz", "unk_map.dat.gz", "unk_pos.dat.gz",
+];
 const SWIFT_F0_MODEL = "https://huggingface.co/FredrikKarlssonSpeech/swift-f0-onnx/resolve/main/onnx/model.onnx?download=true";
 const SAMPLE_RATE = 16_000;
 const ALIGN_CORE_SECONDS = 16;
@@ -314,10 +325,71 @@ function loadKuromoji(): KuromojiNamespace {
   };
   if (!scope.kuromoji) {
     if (!scope.importScripts) throw new Error("Worker が importScripts に対応していません");
-    scope.importScripts(KUROMOJI_SCRIPT);
+    let lastReason: unknown;
+    for (const source of KUROMOJI_SCRIPT_SOURCES) {
+      try {
+        scope.importScripts(source);
+        if (scope.kuromoji) break;
+      } catch (reason) {
+        lastReason = reason;
+      }
+    }
+    if (!scope.kuromoji && lastReason) throw lastReason;
   }
   if (!scope.kuromoji) throw new Error("kuromoji を読み込めませんでした。ネットワーク接続を確認してください");
   return scope.kuromoji;
+}
+
+async function prefetchKuromojiDictionary(baseUrl: string, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let completed = 0;
+  try {
+    await Promise.all(KUROMOJI_DICT_FILES.map(async (file) => {
+      const response = await fetch(baseUrl + file, {
+        cache: "force-cache",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
+      await response.arrayBuffer();
+      completed += 1;
+      endpoint.postMessage({
+        type: "progress",
+        stage: "align",
+        percent: 48 + Math.round((completed / KUROMOJI_DICT_FILES.length) * 6),
+        message: `日本語の読み辞書を取得しています（${completed}/${KUROMOJI_DICT_FILES.length}）`,
+      });
+    }));
+    return baseUrl;
+  } catch (reason) {
+    if (controller.signal.aborted) throw new Error("辞書ファイルの取得が時間内に完了しませんでした");
+    throw reason;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function prepareKuromojiDictionary() {
+  let lastReason: unknown;
+  for (let index = 0; index < KUROMOJI_DICT_SOURCES.length; index += 1) {
+    const source = KUROMOJI_DICT_SOURCES[index];
+    if (index > 0) {
+      endpoint.postMessage({
+        type: "progress",
+        stage: "align",
+        percent: 48,
+        message: "日本語辞書の取得先を切り替えて再試行しています",
+      });
+    }
+    try {
+      return await prefetchKuromojiDictionary(source, 45_000);
+    } catch (reason) {
+      lastReason = reason;
+    }
+  }
+  throw new Error(
+    `日本語辞書を取得できませんでした。歌詞をひらがな／カタカナにすると辞書なしで解析できます${lastReason instanceof Error ? `（${lastReason.message}）` : ""}`,
+  );
 }
 
 function canTokenizeWithoutDictionary(value: string) {
@@ -355,13 +427,14 @@ async function getTokenizeForAlignment(value: string) {
   if (!kuromojiTokenizerPromise) {
     kuromojiTokenizerPromise = (async () => {
       const kuromoji = loadKuromoji();
-      endpoint.postMessage({ type: "progress", stage: "align", percent: 52, message: "日本語の読み辞書を読み込んでいます" });
+      const dictionarySource = await prepareKuromojiDictionary();
+      endpoint.postMessage({ type: "progress", stage: "align", percent: 54, message: "日本語の読み辞書を初期化しています" });
       return withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
-        kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((reason, built) => {
+        kuromoji.builder({ dicPath: dictionarySource }).build((reason, built) => {
           if (reason || !built) reject(reason ?? new Error("辞書を初期化できませんでした"));
           else resolve(built);
         });
-      }), 90_000, "日本語辞書の読み込みが90秒以内に完了しませんでした");
+      }), 45_000, "日本語辞書の初期化が45秒以内に完了しませんでした。歌詞をひらがな／カタカナにして再実行してください");
     })().catch((reason) => {
       kuromojiTokenizerPromise = null;
       throw reason;
