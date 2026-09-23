@@ -251,13 +251,20 @@ async function analyzeSwiftF0(
       const paddedStart = Math.max(0, chunkStart - SWIFT_CONTEXT_SAMPLES);
       const paddedEnd = Math.min(enhanced.length, chunkEnd + SWIFT_CONTEXT_SAMPLES);
       const chunk = enhanced.slice(paddedStart, paddedEnd);
-      const outputs = await session.run({
-        audio: new ort.Tensor("float32", chunk, [1, chunk.length]),
-        fmin,
-        fmax,
-      });
-      const pitches = outputs.pitch.data as Float32Array | Float64Array;
-      const confidences = outputs.confidence.data as Float32Array;
+      const audioInput = new ort.Tensor("float32", chunk, [1, chunk.length]);
+      let outputs: Record<string, import("onnxruntime-web/wasm").Tensor>;
+      try {
+        outputs = await session.run({ audio: audioInput, fmin, fmax });
+      } catch {
+        // The public Hugging Face export names its input/output tensors
+        // input_audio and pitch_hz; the original local export used audio/pitch.
+        outputs = await session.run({ input_audio: audioInput });
+      }
+      const pitchTensor = outputs.pitch ?? outputs.pitch_hz;
+      const confidenceTensor = outputs.confidence;
+      if (!pitchTensor || !confidenceTensor) throw new Error("SwiftF0の出力形式を認識できませんでした");
+      const pitches = pitchTensor.data as Float32Array | Float64Array;
+      const confidences = confidenceTensor.data as Float32Array;
       for (let index = 0; index < confidences.length; index += 1) {
         const sample = paddedStart + index * SWIFT_HOP;
         if (sample < chunkStart || sample >= chunkEnd) continue;
