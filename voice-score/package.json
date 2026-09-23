@@ -6,7 +6,7 @@
   "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/prepare-build.mjs && vite build && node scripts/make-branch-fallback.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,3 +24,4 @@
     "vite": "^8.0.13"
   }
 }
+
