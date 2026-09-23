@@ -14,8 +14,11 @@ if (!appName || !osmdName || !cssName || !analysisWorkerName || !transcribeWorke
 
 const appPath = `${assetDir}/${appName}`;
 const app = await readFile(appPath, "utf8");
-await writeFile(appPath, app.replaceAll(`./${osmdName}`, "./osmd-wrapper.js"));
-await writeFile(`${assetDir}/osmd-wrapper.js`, `
+// Keep dist-pages untouched: the Actions deployment includes the bundled
+// OSMD chunk. Only the branch-publishing fallback uses the CDN wrapper.
+await mkdir("pages-static-assets", { recursive: true });
+await writeFile(`pages-static-assets/${appName}`, app.replaceAll(`./${osmdName}`, "./osmd-wrapper.js"));
+await writeFile("pages-static-assets/osmd-wrapper.js", `
 const api = globalThis.opensheetmusicdisplay;
 export const OpenSheetMusicDisplay = api.OpenSheetMusicDisplay;
 export default api;
@@ -28,10 +31,7 @@ const withExternalOsmd = index.replace(
 );
 await copyFile("source-index.html", "index.html");
 await writeFile("index.html", withExternalOsmd);
-await mkdir("pages-static-assets", { recursive: true });
-await copyFile(appPath, `pages-static-assets/${appName}`);
 await copyFile(`${assetDir}/${cssName}`, `pages-static-assets/${cssName}`);
 await copyFile(`${assetDir}/${analysisWorkerName}`, `pages-static-assets/${analysisWorkerName}`);
 await copyFile(`${assetDir}/${transcribeWorkerName}`, `pages-static-assets/${transcribeWorkerName}`);
-await copyFile(`${assetDir}/osmd-wrapper.js`, "pages-static-assets/osmd-wrapper.js");
 
