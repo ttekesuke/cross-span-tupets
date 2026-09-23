@@ -40,6 +40,12 @@ type WorkerEndpoint = {
 
 const endpoint = self as unknown as WorkerEndpoint;
 const ALIGN_MODEL = "https://huggingface.co/mnaoizyyy/charsiu-js-models/resolve/main/japanese-hubert-base-phoneme-ctc/model_quantized.onnx";
+// Size reported by the Hugging Face repository metadata. Keep this fallback
+// because some CDN CORS responses do not expose the Content-Range header.
+const ALIGN_MODEL_BYTES = 122_970_180;
+const ALIGN_MODEL_CHUNK_BYTES = 8 * 1024 * 1024;
+const ALIGN_MODEL_IDLE_TIMEOUT_MS = 30_000;
+const ALIGN_MODEL_MAX_ATTEMPTS = 3;
 const KUROMOJI_DICT_SOURCES = [
   "https://unpkg.com/kuromoji@0.1.2/dict/",
   "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/",
@@ -83,47 +89,133 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 }
 
 async function fetchAlignmentModel() {
-  const controller = new AbortController();
-  let stalled = false;
-  let stallTimer = setTimeout(() => { stalled = true; controller.abort(); }, 120_000);
-  const resetStallTimer = () => {
-    clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => { stalled = true; controller.abort(); }, 120_000);
+  type RangeResult = { bytes: Uint8Array; contentRange: string };
+
+  const downloadRange = async (
+    start: number,
+    end: number,
+    onRetry: (attempt: number) => void,
+    onProgress: (receivedBytes: number) => void = () => {},
+  ): Promise<RangeResult> => {
+    let lastReason: unknown;
+    for (let attempt = 1; attempt <= ALIGN_MODEL_MAX_ATTEMPTS; attempt += 1) {
+      const controller = new AbortController();
+      let idleTimer: ReturnType<typeof setTimeout>;
+      const resetIdleTimer = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => controller.abort(), ALIGN_MODEL_IDLE_TIMEOUT_MS);
+      };
+      try {
+        resetIdleTimer();
+        const response = await fetch(ALIGN_MODEL, {
+          headers: { Range: `bytes=${start}-${end}` },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (response.status !== 206) {
+          await response.body?.cancel();
+          throw new Error(`分割取得に対応していない応答です（HTTP ${response.status}）`);
+        }
+        const contentRange = response.headers.get("content-range") ?? "";
+        const expectedLength = end - start + 1;
+        const bytes = new Uint8Array(expectedLength);
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("音素モデルの応答本文を読み取れませんでした");
+        let offset = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          resetIdleTimer();
+          if (offset + value.byteLength > bytes.byteLength) {
+            throw new Error("音素モデルの分割サイズが応答と一致しません");
+          }
+          bytes.set(value, offset);
+          offset += value.byteLength;
+          onProgress(offset);
+        }
+        if (offset !== expectedLength) {
+          throw new Error(`音素モデルの一部が不足しています（${offset}/${expectedLength} bytes）`);
+        }
+        return { bytes, contentRange };
+      } catch (reason) {
+        lastReason = reason;
+        if (attempt < ALIGN_MODEL_MAX_ATTEMPTS) {
+          onProgress(0);
+          onRetry(attempt + 1);
+        }
+      } finally {
+        clearTimeout(idleTimer!);
+      }
+    }
+    const detail = lastReason instanceof Error ? lastReason.message : String(lastReason);
+    throw new Error(`音素モデルの分割ダウンロードに失敗しました（${detail}）`);
   };
 
-  try {
-    const response = await fetch(ALIGN_MODEL, { signal: controller.signal });
-    if (!response.ok) throw new Error(`音素モデルの取得に失敗しました（HTTP ${response.status}）`);
-    if (!response.body) return new Uint8Array(await response.arrayBuffer());
-
-    const expectedBytes = Number(response.headers.get("content-length")) || 123 * 1024 * 1024;
-    const reader = response.body.getReader();
-    const pieces: Uint8Array[] = [];
-    let received = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      resetStallTimer();
-      pieces.push(value);
-      received += value.byteLength;
-      const downloadPercent = Math.min(99, Math.round((received / expectedBytes) * 100));
-      endpoint.postMessage({
-        type: "progress",
-        stage: "align",
-        percent: 58 + Math.round(downloadPercent * 0.1),
-        message: `日本語 HuBERT 音素モデルを取得しています（${downloadPercent}%）`,
-      });
-    }
-    const merged = new Uint8Array(received);
-    let offset = 0;
-    for (const piece of pieces) { merged.set(piece, offset); offset += piece.byteLength; }
-    return merged;
-  } catch (reason) {
-    if (stalled) throw new Error("音素モデルのダウンロードが2分以上進まなかったため中止しました。通信状態を確認して再実行してください");
-    throw reason;
-  } finally {
-    clearTimeout(stallTimer);
+  endpoint.postMessage({
+    type: "progress",
+    stage: "align",
+    percent: 58,
+    message: "日本語 HuBERT 音素モデルのサイズを確認しています",
+  });
+  const probe = await downloadRange(0, 0, (attempt) => {
+    endpoint.postMessage({
+      type: "progress",
+      stage: "align",
+      percent: 58,
+      message: `音素モデルへの接続を再試行しています（${attempt}/${ALIGN_MODEL_MAX_ATTEMPTS}）`,
+    });
+  });
+  const match = /^bytes\s+0-0\/(\d+)$/i.exec(probe.contentRange.trim());
+  const totalBytes = match ? Number(match[1]) : ALIGN_MODEL_BYTES;
+  if (!Number.isSafeInteger(totalBytes) || totalBytes <= 0 || totalBytes > 512 * 1024 * 1024) {
+    throw new Error(`音素モデルのサイズを確認できませんでした（Content-Range: ${probe.contentRange || "なし"}）`);
   }
+
+  const model = new Uint8Array(totalBytes);
+  const chunkCount = Math.ceil(totalBytes / ALIGN_MODEL_CHUNK_BYTES);
+  const loadedByChunk = new Float64Array(chunkCount);
+  let nextChunk = 0;
+  let lastReportedPercent = -1;
+  const currentReceived = () => loadedByChunk.reduce((sum, value) => sum + value, 0);
+  const reportDownloadProgress = () => {
+    const downloadPercent = Math.min(100, Math.floor((currentReceived() / totalBytes) * 100));
+    if (downloadPercent === lastReportedPercent) return;
+    lastReportedPercent = downloadPercent;
+    endpoint.postMessage({
+      type: "progress",
+      stage: "align",
+      percent: 58 + Math.round(downloadPercent * 0.1),
+      message: `日本語 HuBERT 音素モデルを分割取得しています（${downloadPercent}%・${chunkCount}分割）`,
+    });
+  };
+  const worker = async () => {
+    while (true) {
+      const chunkIndex = nextChunk;
+      nextChunk += 1;
+      if (chunkIndex >= chunkCount) return;
+      const start = chunkIndex * ALIGN_MODEL_CHUNK_BYTES;
+      const end = Math.min(totalBytes - 1, start + ALIGN_MODEL_CHUNK_BYTES - 1);
+      const result = await downloadRange(start, end, (attempt) => {
+        const downloadPercent = Math.floor((currentReceived() / totalBytes) * 100);
+        endpoint.postMessage({
+          type: "progress",
+          stage: "align",
+          percent: 58 + Math.round(downloadPercent * 0.1),
+          message: `停止した音素モデル区間を再取得しています（${downloadPercent}%・${attempt}/${ALIGN_MODEL_MAX_ATTEMPTS}）`,
+        });
+      }, (chunkBytes) => {
+        loadedByChunk[chunkIndex] = chunkBytes;
+        reportDownloadProgress();
+      });
+      model.set(result.bytes, start);
+      loadedByChunk[chunkIndex] = result.bytes.byteLength;
+      reportDownloadProgress();
+    }
+  };
+  // A few concurrent 8 MiB requests avoid the single long Xet/CDN stream
+  // that can remain at HTTP 200 without yielding more body bytes.
+  await Promise.all(Array.from({ length: Math.min(3, chunkCount) }, () => worker()));
+  return model;
 }
 
 function fallbackReadingForAlignedSurface(surface: string) {
