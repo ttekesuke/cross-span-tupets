@@ -1,4 +1,11 @@
 import type { IpadicFeatures, Tokenizer } from "kuromoji";
+// Kuromoji's public browser bundle uses the very old zlib.js implementation.
+// Import only the dictionary/tokenizer classes; dictionary gzip data is
+// expanded below with the browser's native DecompressionStream instead.
+// @ts-expect-error Kuromoji does not publish declarations for internal modules.
+import DynamicDictionaries from "kuromoji/src/dict/DynamicDictionaries";
+// @ts-expect-error Kuromoji does not publish declarations for internal modules.
+import KuromojiTokenizer from "kuromoji/src/Tokenizer";
 import { PhonemizerJa } from "charsiu-js/core";
 import {
   analyzePitch,
@@ -31,21 +38,11 @@ type WorkerEndpoint = {
   postMessage: (message: unknown) => void;
 };
 
-type KuromojiNamespace = {
-  builder: (options: { dicPath: string }) => {
-    build: (callback: (reason: unknown, tokenizer: Tokenizer<IpadicFeatures> | undefined) => void) => void;
-  };
-};
-
 const endpoint = self as unknown as WorkerEndpoint;
 const ALIGN_MODEL = "https://huggingface.co/mnaoizyyy/charsiu-js-models/resolve/main/japanese-hubert-base-phoneme-ctc/model_quantized.onnx";
 const KUROMOJI_DICT_SOURCES = [
   "https://unpkg.com/kuromoji@0.1.2/dict/",
   "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/",
-];
-const KUROMOJI_SCRIPT_SOURCES = [
-  "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js",
-  "https://unpkg.com/kuromoji@0.1.2/build/kuromoji.js",
 ];
 const KUROMOJI_DICT_FILES = [
   "base.dat.gz", "cc.dat.gz", "check.dat.gz", "tid.dat.gz",
@@ -311,39 +308,11 @@ async function analyzeSwiftF0(
   return frames;
 }
 
-/**
- * kuromoji's browser bundle includes zlib.js. Bundling that old CommonJS
- * file through Vite turns its top-level `this` into undefined, which causes
- * `Cannot use 'in' operator to search for 'Zlib' in undefined`. Loading the
- * published UMD bundle as a classic worker script preserves its intended
- * global scope and avoids the broken CommonJS transform.
- */
-function loadKuromoji(): KuromojiNamespace {
-  const scope = globalThis as typeof globalThis & {
-    kuromoji?: KuromojiNamespace;
-    importScripts?: (...urls: string[]) => void;
-  };
-  if (!scope.kuromoji) {
-    if (!scope.importScripts) throw new Error("Worker が importScripts に対応していません");
-    let lastReason: unknown;
-    for (const source of KUROMOJI_SCRIPT_SOURCES) {
-      try {
-        scope.importScripts(source);
-        if (scope.kuromoji) break;
-      } catch (reason) {
-        lastReason = reason;
-      }
-    }
-    if (!scope.kuromoji && lastReason) throw lastReason;
-  }
-  if (!scope.kuromoji) throw new Error("kuromoji を読み込めませんでした。ネットワーク接続を確認してください");
-  return scope.kuromoji;
-}
-
 async function prefetchKuromojiDictionary(baseUrl: string, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let completed = 0;
+  const files = new Map<string, ArrayBuffer>();
   try {
     await Promise.all(KUROMOJI_DICT_FILES.map(async (file) => {
       const response = await fetch(baseUrl + file, {
@@ -351,7 +320,7 @@ async function prefetchKuromojiDictionary(baseUrl: string, timeoutMs: number) {
         signal: controller.signal,
       });
       if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`);
-      await response.arrayBuffer();
+      files.set(file, await response.arrayBuffer());
       completed += 1;
       endpoint.postMessage({
         type: "progress",
@@ -360,13 +329,65 @@ async function prefetchKuromojiDictionary(baseUrl: string, timeoutMs: number) {
         message: `日本語の読み辞書を取得しています（${completed}/${KUROMOJI_DICT_FILES.length}）`,
       });
     }));
-    return baseUrl;
+    return files;
   } catch (reason) {
     if (controller.signal.aborted) throw new Error("辞書ファイルの取得が時間内に完了しませんでした");
     throw reason;
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function decompressKuromojiDictionary(compressed: Map<string, ArrayBuffer>) {
+  if (typeof DecompressionStream === "undefined") {
+    throw new Error("このブラウザは日本語辞書の展開に対応していません。ChromeまたはEdgeの最新版を使用してください");
+  }
+  const expanded = new Map<string, ArrayBuffer>();
+  let completed = 0;
+  // Decompress sequentially. This avoids holding several temporary expanded
+  // copies at once on machines that are already going to load the HuBERT model.
+  for (const file of KUROMOJI_DICT_FILES) {
+    const source = compressed.get(file);
+    if (!source) throw new Error(`${file} が取得済み辞書にありません`);
+    const stream = new Blob([source]).stream().pipeThrough(new DecompressionStream("gzip"));
+    expanded.set(file, await new Response(stream).arrayBuffer());
+    completed += 1;
+    endpoint.postMessage({
+      type: "progress",
+      stage: "align",
+      percent: 54 + Math.round((completed / KUROMOJI_DICT_FILES.length) * 2),
+      message: `日本語の読み辞書を展開しています（${completed}/${KUROMOJI_DICT_FILES.length}）`,
+    });
+    // Return to the worker event loop between large dictionary files so
+    // progress messages and cancellation/error timers remain responsive.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  return expanded;
+}
+
+function createKuromojiTokenizer(files: Map<string, ArrayBuffer>): Tokenizer<IpadicFeatures> {
+  const get = (name: string) => {
+    const buffer = files.get(name);
+    if (!buffer) throw new Error(`${name} を展開できませんでした`);
+    return buffer;
+  };
+  const dictionaries = new DynamicDictionaries();
+  dictionaries.loadTrie(new Int32Array(get("base.dat.gz")), new Int32Array(get("check.dat.gz")));
+  dictionaries.loadTokenInfoDictionaries(
+    new Uint8Array(get("tid.dat.gz")),
+    new Uint8Array(get("tid_pos.dat.gz")),
+    new Uint8Array(get("tid_map.dat.gz")),
+  );
+  dictionaries.loadConnectionCosts(new Int16Array(get("cc.dat.gz")));
+  dictionaries.loadUnknownDictionaries(
+    new Uint8Array(get("unk.dat.gz")),
+    new Uint8Array(get("unk_pos.dat.gz")),
+    new Uint8Array(get("unk_map.dat.gz")),
+    new Uint8Array(get("unk_char.dat.gz")),
+    new Uint32Array(get("unk_compat.dat.gz")),
+    new Uint8Array(get("unk_invoke.dat.gz")),
+  );
+  return new KuromojiTokenizer(dictionaries) as Tokenizer<IpadicFeatures>;
 }
 
 async function prepareKuromojiDictionary() {
@@ -426,15 +447,12 @@ async function getTokenizeForAlignment(value: string) {
   });
   if (!kuromojiTokenizerPromise) {
     kuromojiTokenizerPromise = (async () => {
-      const kuromoji = loadKuromoji();
-      const dictionarySource = await prepareKuromojiDictionary();
-      endpoint.postMessage({ type: "progress", stage: "align", percent: 54, message: "日本語の読み辞書を初期化しています" });
-      return withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
-        kuromoji.builder({ dicPath: dictionarySource }).build((reason, built) => {
-          if (reason || !built) reject(reason ?? new Error("辞書を初期化できませんでした"));
-          else resolve(built);
-        });
-      }), 45_000, "日本語辞書の初期化が45秒以内に完了しませんでした。歌詞をひらがな／カタカナにして再実行してください");
+      const compressed = await prepareKuromojiDictionary();
+      const expanded = await decompressKuromojiDictionary(compressed);
+      endpoint.postMessage({ type: "progress", stage: "align", percent: 56, message: "日本語の読み辞書から索引を作成しています" });
+      const tokenizer = createKuromojiTokenizer(expanded);
+      endpoint.postMessage({ type: "progress", stage: "align", percent: 56, message: "日本語辞書を読み込みました" });
+      return tokenizer;
     })().catch((reason) => {
       kuromojiTokenizerPromise = null;
       throw reason;
