@@ -1,6 +1,5 @@
 import type { IpadicFeatures, Tokenizer } from "kuromoji";
 import { PhonemizerJa } from "charsiu-js/core";
-import { loadPhoneVocabJa } from "charsiu-js/assets-web";
 import {
   analyzePitch,
   hzToMidi,
@@ -52,6 +51,18 @@ const SWIFT_HOP = 256;
 const SWIFT_CHUNK_SAMPLES = SAMPLE_RATE * 30;
 const SWIFT_CONTEXT_SAMPLES = SWIFT_HOP * 11;
 const MORA_PHONES = new Set(["a", "i", "u", "e", "o", "N", "cl"]);
+// This vocabulary is only 47 entries and is part of the Charsiu Japanese
+// model.  Keep it in the worker so analysis does not depend on a second CDN
+// request that could leave the UI stuck at 48% when that request stalls.
+const PHONE_VOCAB_JA: Record<string, number> = {
+  PAD: 0, UNK: 1, SOS: 2, EOS: 3,
+  a: 4, i: 5, u: 6, e: 7, o: 8, I: 9, U: 10,
+  k: 11, g: 12, s: 13, z: 14, t: 15, d: 16, n: 17,
+  h: 18, b: 19, p: 20, m: 21, y: 22, r: 23, w: 24,
+  f: 25, j: 26, v: 27, N: 28, cl: 29, sh: 30, ch: 31,
+  ts: 32, ky: 33, gy: 34, hy: 35, by: 36, py: 37, my: 38,
+  ny: 39, ry: 40, fy: 41, dy: 42, kw: 43, gw: 44, pau: 45, sil: 46,
+};
 let runtimePromise: Promise<AnalysisRuntime> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -312,12 +323,15 @@ function loadKuromoji(): KuromojiNamespace {
 
 async function createAnalysisRuntime(): Promise<AnalysisRuntime> {
   endpoint.postMessage({ type: "progress", stage: "align", percent: 48, message: "日本語辞書を準備しています" });
-  const [ort, vocab] = await Promise.all([
+  const ort = await withTimeout(
     import("onnxruntime-web/wasm"),
-    loadPhoneVocabJa("https://cdn.jsdelivr.net/npm/charsiu-js@0.2.0/assets/"),
-  ]);
+    60_000,
+    "音声解析エンジンの準備が60秒以内に完了しませんでした。ページを再読み込みして再実行してください",
+  );
+  endpoint.postMessage({ type: "progress", stage: "align", percent: 50, message: "日本語辞書を準備しています（内蔵辞書）" });
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
   const kuromoji = loadKuromoji();
+  endpoint.postMessage({ type: "progress", stage: "align", percent: 52, message: "日本語の読み辞書を読み込んでいます" });
   const tokenizer = await withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
     kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((reason, built) => {
       if (reason || !built) reject(reason ?? new Error("辞書を初期化できませんでした"));
@@ -334,7 +348,7 @@ async function createAnalysisRuntime(): Promise<AnalysisRuntime> {
     300_000,
     "音素モデルの準備が5分以内に完了しませんでした。ブラウザのメモリ不足の可能性があります",
   );
-  return { ort, phonemizer: new PhonemizerJa(adapter, vocab), session, tokenizeForAlignment };
+  return { ort, phonemizer: new PhonemizerJa(adapter, PHONE_VOCAB_JA), session, tokenizeForAlignment };
 }
 
 async function getAnalysisRuntime() {
@@ -455,3 +469,4 @@ endpoint.onmessage = async ({ data }) => {
     });
   }
 };
+
