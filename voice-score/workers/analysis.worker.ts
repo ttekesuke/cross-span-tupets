@@ -23,9 +23,7 @@ type Ort = typeof import("onnxruntime-web/wasm");
 
 type AnalysisRuntime = {
   ort: Ort;
-  phonemizer: PhonemizerJa;
   session: import("onnxruntime-web/wasm").InferenceSession;
-  tokenizeForAlignment: (value: string) => PronounceableJapaneseToken[];
 };
 
 type WorkerEndpoint = {
@@ -64,6 +62,7 @@ const PHONE_VOCAB_JA: Record<string, number> = {
   ny: 39, ry: 40, fy: 41, dy: 42, kw: 43, gw: 44, pau: 45, sil: 46,
 };
 let runtimePromise: Promise<AnalysisRuntime> | null = null;
+let kuromojiTokenizerPromise: Promise<Tokenizer<IpadicFeatures>> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -321,26 +320,66 @@ function loadKuromoji(): KuromojiNamespace {
   return scope.kuromoji;
 }
 
+function canTokenizeWithoutDictionary(value: string) {
+  const normalized = value.normalize("NFKC");
+  // Numeric dates such as 11月31日 are handled by normalizeJapaneseTokens.
+  // Any other kanji needs Kuromoji because its reading may be ambiguous.
+  const withoutNumericCounters = normalized.replace(/\d+(?:月|日)/gu, "");
+  return !/[々〇〆一-龯]/u.test(withoutNumericCounters);
+}
+
+function tokenizeKanaText(value: string): PronounceableJapaneseToken[] {
+  const surfaces = value.normalize("NFKC").match(
+    /[ぁ-ゖァ-ヶー]+|[+-]?\d+(?:\.\d+)?|[月日]/gu,
+  ) ?? [];
+  return normalizeJapaneseTokens(surfaces.map((surface_form) => ({ surface_form })));
+}
+
+async function getTokenizeForAlignment(value: string) {
+  if (canTokenizeWithoutDictionary(value)) {
+    endpoint.postMessage({
+      type: "progress",
+      stage: "align",
+      percent: 50,
+      message: "かな歌詞の読みを準備しました（日本語辞書は不要です）",
+    });
+    return tokenizeKanaText;
+  }
+
+  endpoint.postMessage({
+    type: "progress",
+    stage: "align",
+    percent: 48,
+    message: "漢字を含むため日本語辞書を準備しています",
+  });
+  if (!kuromojiTokenizerPromise) {
+    kuromojiTokenizerPromise = (async () => {
+      const kuromoji = loadKuromoji();
+      endpoint.postMessage({ type: "progress", stage: "align", percent: 52, message: "日本語の読み辞書を読み込んでいます" });
+      return withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
+        kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((reason, built) => {
+          if (reason || !built) reject(reason ?? new Error("辞書を初期化できませんでした"));
+          else resolve(built);
+        });
+      }), 90_000, "日本語辞書の読み込みが90秒以内に完了しませんでした");
+    })().catch((reason) => {
+      kuromojiTokenizerPromise = null;
+      throw reason;
+    });
+  }
+  const tokenizer = await kuromojiTokenizerPromise;
+  endpoint.postMessage({ type: "progress", stage: "align", percent: 56, message: "日本語辞書を読み込みました" });
+  return (text: string) => normalizeJapaneseTokens(tokenizer.tokenize(text));
+}
+
 async function createAnalysisRuntime(): Promise<AnalysisRuntime> {
-  endpoint.postMessage({ type: "progress", stage: "align", percent: 48, message: "日本語辞書を準備しています" });
+  endpoint.postMessage({ type: "progress", stage: "align", percent: 56, message: "音素解析エンジンを準備しています" });
   const ort = await withTimeout(
     import("onnxruntime-web/wasm"),
     60_000,
     "音声解析エンジンの準備が60秒以内に完了しませんでした。ページを再読み込みして再実行してください",
   );
-  endpoint.postMessage({ type: "progress", stage: "align", percent: 50, message: "日本語辞書を準備しています（内蔵辞書）" });
   ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
-  const kuromoji = loadKuromoji();
-  endpoint.postMessage({ type: "progress", stage: "align", percent: 52, message: "日本語の読み辞書を読み込んでいます" });
-  const tokenizer = await withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
-    kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((reason, built) => {
-      if (reason || !built) reject(reason ?? new Error("辞書を初期化できませんでした"));
-      else resolve(built);
-    });
-  }), 90_000, "日本語辞書の読み込みが90秒以内に完了しませんでした");
-  endpoint.postMessage({ type: "progress", stage: "align", percent: 56, message: "日本語辞書を読み込みました" });
-  const tokenizeForAlignment = (value: string) => normalizeJapaneseTokens(tokenizer.tokenize(value));
-  const adapter = { tokenize: tokenizeForAlignment };
   const modelBytes = await fetchAlignmentModel();
   endpoint.postMessage({ type: "progress", stage: "align", percent: 68, message: "音素モデルのセッションを準備しています" });
   const session = await withTimeout(
@@ -348,7 +387,7 @@ async function createAnalysisRuntime(): Promise<AnalysisRuntime> {
     300_000,
     "音素モデルの準備が5分以内に完了しませんでした。ブラウザのメモリ不足の可能性があります",
   );
-  return { ort, phonemizer: new PhonemizerJa(adapter, PHONE_VOCAB_JA), session, tokenizeForAlignment };
+  return { ort, session };
 }
 
 async function getAnalysisRuntime() {
@@ -372,7 +411,9 @@ endpoint.onmessage = async ({ data }) => {
   if (data.type !== "analyze") return;
 
   try {
-    const { ort, phonemizer, session, tokenizeForAlignment } = await getAnalysisRuntime();
+    const tokenizeForAlignment = await getTokenizeForAlignment(data.text);
+    const { ort, session } = await getAnalysisRuntime();
+    const phonemizer = new PhonemizerJa({ tokenize: tokenizeForAlignment }, PHONE_VOCAB_JA);
     const result = await alignWholeRecording(session, ort, phonemizer, data.audio, data.text);
     const tokens = tokenizeForAlignment(data.text);
     const targetToWord = new Int32Array(result.phoneIds.length).fill(-1);
@@ -469,4 +510,3 @@ endpoint.onmessage = async ({ data }) => {
     });
   }
 };
-
