@@ -1,0 +1,26 @@
+{
+  "name": "voice-score-github-pages",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "charsiu-js": "^0.2.0",
+    "kuromoji": "^0.1.2",
+    "onnxruntime-web": "^1.30.0",
+    "opensheetmusicdisplay": "^2.1.2",
+    "pitchfinder": "^2.3.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.13"
+  }
+}

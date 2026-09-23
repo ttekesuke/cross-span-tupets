@@ -1,0 +1,57 @@
+name: Deploy voice score to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "voice-score/**"
+      - ".github/workflows/deploy-voice-score.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: voice-score
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: voice-score/package.json
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build static app
+        run: npm run build
+        env:
+          GITHUB_PAGES_BASE: /cross-span-tupets/voice-score/
+      - name: Add Pages marker
+        run: touch dist-pages/.nojekyll
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: voice-score/dist-pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
