@@ -316,6 +316,7 @@ async function createAnalysisRuntime(): Promise<AnalysisRuntime> {
     import("onnxruntime-web/wasm"),
     loadPhoneVocabJa("https://cdn.jsdelivr.net/npm/charsiu-js@0.2.0/assets/"),
   ]);
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
   const kuromoji = loadKuromoji();
   const tokenizer = await withTimeout(new Promise<Tokenizer<IpadicFeatures>>((resolve, reject) => {
     kuromoji.builder({ dicPath: KUROMOJI_DICT }).build((reason, built) => {

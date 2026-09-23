@@ -3,9 +3,6 @@ name: Deploy voice score to GitHub Pages
 on:
   push:
     branches: [main]
-    paths:
-      - "voice-score/**"
-      - ".github/workflows/deploy-voice-score.yml"
   workflow_dispatch:
 
 permissions:
@@ -40,10 +37,17 @@ jobs:
           GITHUB_PAGES_BASE: /cross-span-tupets/voice-score/
       - name: Add Pages marker
         run: touch dist-pages/.nojekyll
+      - name: Assemble complete Pages site
+        working-directory: ${{ github.workspace }}
+        run: |
+          mkdir -p pages-site/voice-score
+          rsync -a --exclude='.git' --exclude='voice-score' --exclude='pages-site' --exclude='.github' ./ pages-site/
+          cp -a voice-score/dist-pages/. pages-site/voice-score/
+          touch pages-site/.nojekyll
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: voice-score/dist-pages
+          path: pages-site
 
   deploy:
     needs: build

@@ -78,6 +78,7 @@ function mergeSpeechRegions(regions: SpeechRegion[]) {
 
 async function detectSpeech(audio: Float32Array): Promise<SpeechRegion[]> {
   const ort = await import("onnxruntime-web/wasm");
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
   const response = await fetch(VAD_MODEL);
   if (!response.ok) throw new Error(`発話検出モデルを読み込めませんでした（HTTP ${response.status}）`);
   const session = await ort.InferenceSession.create(await response.arrayBuffer(), {
