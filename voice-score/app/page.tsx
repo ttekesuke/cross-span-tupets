@@ -86,6 +86,8 @@ export default function Home() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
   const recordingStartedAtRef = useRef(0);
+  const recordedDurationHintRef = useRef<number | null>(null);
+  const audioLoadGenerationRef = useRef(0);
   const osmdRef = useRef<OpenSheetMusicDisplayType | null>(null);
   const analysisWorkerRef = useRef<Worker | null>(null);
   const playbackFrameRef = useRef<number | null>(null);
@@ -143,11 +145,13 @@ export default function Home() {
     analysisWorkerRef.current = null;
   }, []);
 
-  function chooseFile(selected: File | null) {
+  function chooseFile(selected: File | null, recordedDurationHint: number | null = null) {
     if (!selected) return;
     cancelPlaybackLoop();
     audioRef.current?.pause();
     setIsScorePlaying(false);
+    recordedDurationHintRef.current = recordedDurationHint;
+    audioLoadGenerationRef.current += 1;
     setFile(selected);
     setAudioUrl(URL.createObjectURL(selected));
     setTranscript("");
@@ -162,6 +166,46 @@ export default function Home() {
     setProgress(0);
     setError(null);
     setStatus("音声を読み込みました。解析範囲を選択できます");
+  }
+
+  function applyAudioDuration(duration: number) {
+    if (!(duration > 0)) return;
+    setAudioDuration(duration);
+    setAudioRange([0, duration]);
+  }
+
+  function handleAudioLoadedMetadata(audio: HTMLAudioElement) {
+    const generation = audioLoadGenerationRef.current;
+    const durationHint = recordedDurationHintRef.current ?? 0;
+    const metadataDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+    const metadataLooksTruncated = durationHint > 0 && metadataDuration > 0 && metadataDuration < durationHint * 0.75;
+    applyAudioDuration(metadataLooksTruncated || metadataDuration === 0 ? durationHint : metadataDuration);
+
+    // MediaRecorder WebM may omit a reliable duration. Seeking once to the end makes
+    // Chromium calculate it; the measured recording time remains the fallback.
+    if (metadataDuration > 0 && !metadataLooksTruncated) return;
+    let timeout = 0;
+    const cleanupProbe = () => {
+      window.clearTimeout(timeout);
+      audio.removeEventListener("durationchange", handleProbeProgress);
+      audio.removeEventListener("timeupdate", handleProbeProgress);
+      audio.removeEventListener("seeked", handleProbeProgress);
+    };
+    const finishProbe = (force: boolean) => {
+      const probedDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      const probeIsReliable = probedDuration > (durationHint > 0 ? durationHint * 0.75 : 0);
+      if (!force && !probeIsReliable) return;
+      cleanupProbe();
+      if (generation !== audioLoadGenerationRef.current || audio !== audioRef.current) return;
+      applyAudioDuration(probedDuration > durationHint * 0.75 ? probedDuration : durationHint);
+      try { audio.currentTime = 0; } catch { /* The duration hint still supports playback and range selection. */ }
+    };
+    const handleProbeProgress = () => finishProbe(false);
+    timeout = window.setTimeout(() => finishProbe(true), 1000);
+    audio.addEventListener("durationchange", handleProbeProgress);
+    audio.addEventListener("timeupdate", handleProbeProgress);
+    audio.addEventListener("seeked", handleProbeProgress);
+    try { audio.currentTime = Number.MAX_SAFE_INTEGER; } catch { finishProbe(true); }
   }
 
   function updateAudioRange(values: [number, number]) {
@@ -295,6 +339,7 @@ export default function Home() {
       recorder.ondataavailable = (event) => { if (event.data.size > 0) recordedChunksRef.current.push(event.data); };
       recorder.onerror = () => setError("録音中にエラーが発生しました");
       recorder.onstop = () => {
+        const recordedDuration = Math.max(0, (performance.now() - recordingStartedAtRef.current) / 1000);
         if (recordingTimerRef.current !== null) window.clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
         stream.getTracks().forEach((track) => track.stop());
@@ -305,9 +350,12 @@ export default function Home() {
         if (!chunks.length) { setError("録音データを取得できませんでした"); return; }
         const recordedType = recorder.mimeType || mimeType || "audio/webm";
         const extension = recordedType.includes("ogg") ? "ogg" : recordedType.includes("mp4") ? "m4a" : "webm";
-        chooseFile(new File(chunks, `recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, { type: recordedType }));
+        chooseFile(new File(chunks, `recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`, { type: recordedType }), recordedDuration);
       };
-      recorder.start(250);
+      // Asking MediaRecorder for a Blob every 250 ms produced concatenated WebM
+      // fragments that some browsers reported as a 0.2-second file. A single final
+      // Blob remains fully seekable and is still small for the recommended 3 minutes.
+      recorder.start();
       recordingStartedAtRef.current = performance.now();
       setRecordingSeconds(0);
       setIsRecording(true);
@@ -520,7 +568,7 @@ export default function Home() {
 
         {audioUrl && <>
           <audio ref={audioRef} className="audio-player" src={audioUrl} controls preload="metadata"
-            onLoadedMetadata={(event) => { const duration = Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0; setAudioDuration(duration); setAudioRange([0, duration]); }}
+            onLoadedMetadata={(event) => handleAudioLoadedMetadata(event.currentTarget)}
             onPlay={handleAudioPlay}
             onPause={handleAudioPause}
             onSeeked={(event) => {
